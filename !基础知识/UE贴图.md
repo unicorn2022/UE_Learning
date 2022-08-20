@@ -8,7 +8,7 @@
 | :--: | :--: | :---------------: |
 | RGB  |  N   |   Normal，法线    |
 | RGB  |  D   | Diffuse，基础颜色 |
-|      |      |                   |
+| RGB  |  O   | Opacity，不透明度 |
 
 
 
