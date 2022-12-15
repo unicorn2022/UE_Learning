@@ -245,7 +245,7 @@
 
      <img src="AssetMarkdown/image-20220818105946704.png" alt="image-20220818105946704" style="zoom:80%;" />
 
-## 第19课时	PBR材质
+## 课时19	PBR材质
 
 PBR材质：Physically-Based Rendering，基于物理渲染的材质
 
