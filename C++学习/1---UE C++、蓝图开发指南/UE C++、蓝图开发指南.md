@@ -119,15 +119,33 @@
 1.   与调用`printf()`类似
 
 ```c++
-// 在游戏开始或生成时调用
-void ABasicGeometryActor::BeginPlay(){
-	Super::BeginPlay();
-	
-	
-	UE_LOG(LogTemp, Display, TEXT("Hello Unreal!"));
-	UE_LOG(LogTemp, Warning, TEXT("Hello Unreal!"));
-	UE_LOG(LogTemp, Error, TEXT("Hello Unreal!"));
+int WeaponNum = 4;
+int KillNum = 7;
+float Health = 34.435235f;
+bool IsDead = false;
+bool HasWeapon = true;
+UE_LOG(LogTemp, Display, TEXT("WeaponsNum: %d, KillsNum: %i"), WeaponNum, KillNum);
+UE_LOG(LogTemp, Display, TEXT("Health: %f"), Health);
+UE_LOG(LogTemp, Display, TEXT("Health: %.2f"), Health);
+UE_LOG(LogTemp, Display, TEXT("IsDead: %d"), IsDead);
+UE_LOG(LogTemp, Display, TEXT("HasWeapon: %d"), static_cast<int>(HasWeapon));
+```
 
+<img src="AssetMarkdown/image-20230117182558048.png" alt="image-20230117182558048" style="zoom:80%;" />
+
+## 2.3	新建private函数
+
+1.   在`.h`文件中，创建函数的声明
+2.   `右键 => 快速操作和重构 => 创建声明/定义`，即可在`.cpp`文件中创建函数的定义
+
+## 2.4	磁盘中的日志文件
+
+1.   存储在`工程目录/Saved/Logs`中
+
+## 2.5	总结
+
+```c++
+void ABasicGeometryActor::printTypes(){
 	int WeaponNum = 4;
 	int KillNum = 7;
 	float Health = 34.435235f;
@@ -141,13 +159,110 @@ void ABasicGeometryActor::BeginPlay(){
 }
 ```
 
-<img src="AssetMarkdown/image-20230117182558048.png" alt="image-20230117182558048" style="zoom:80%;" />
+# 三、FString类型 & 日志记录类别
 
-## 2.3	新建private函数
+## 3.1	自定义日志类别
 
-1.   在`.h`文件中，创建函数的声明
-2.   `右键 => 快速操作和重构 => 创建声明/定义`，即可在`.cpp`文件中创建函数的定义
+1.   仅在单个`.cpp`中可用：`DEFINE_LOG_CATEGORY_STATIC`
 
-## 2.4	磁盘中的日志文件
+     1.   `CategoryName`：日志类的名字
+     2.   `DefaultVerbosity`：默认日志等级
+     3.   `CompileTimeVerbosity`：编译时最高日志等级
 
-1.   存储在`工程目录/Saved/Logs`中
+     ```c++
+     DEFINE_LOG_CATEGORY_STATIC(LogBasicGeometry, All, All);
+     ```
+
+## 3.2	日志的级别
+
+1.   在`ELogVerbosity`中定义的枚举类：
+
+     ```c++
+     namespace ELogVerbosity {
+     	enum Type : uint8 {
+     		NoLogging	= 0,
+     		Fatal,
+     		Error,
+     		Warning,
+     		Display,
+     		Log,
+     		Verbose,
+     		VeryVerbose,
+     		All				= VeryVerbose,
+     		NumVerbosity,
+     		VerbosityMask	= 0xf,
+     		SetColor		= 0x40, 
+     		BreakOnLog		= 0x80
+     	};
+     }
+     ```
+
+2.   因此，如果自定义日志类的最高日志等级为`Error`，则只能输出类别为`Error/Fatal/NoLogging`的日志信息
+
+## 3.3	字符串
+
+1.   `TChar`：UE的字符类型
+
+2.   `FString`：与`std::string`类似
+
+     1.   用`UE_LOG`输出`FString`时，需要用`*`获得其字符串数组的首地址
+
+          ```c++
+          FString Name = "John Connor";
+          UE_LOG(LogBasicGeometry, Display, TEXT("Name: %s"), *Name);
+          ```
+
+     2.   `FString`还支持一系列功能函数，从其它类型转化为`FString`、格式化构建`FString`
+
+          ```c++
+          int WeaponNum = 4;
+          float Health = 34.435235f;
+          bool IsDead = false;
+          FString WeaponNumStr = "Weapons num = " + FString::FromInt(WeaponNum);
+          FString HealthStr = "Health = " + FString::SanitizeFloat(Health);
+          FString IsDeadStr = "IsDead = " + FString(IsDead ? "true" : "false");
+          
+          FString State = FString::Printf(TEXT("\n == All State == \n %s \n %s \n %s"), *WeaponNumStr, *HealthStr, *IsDeadStr);
+          UE_LOG(LogBasicGeometry, Warning, TEXT("%s"), *State);
+          ```
+
+3.   `FName`
+
+4.   `FText`
+
+## 3.4	在屏幕上打印一条信息
+
+1.   `GEngine->AddOnScreenDebugMessage()`
+
+     1.   `int32 Key`：消息的键值，键值相同的消息不会重复显示，-1表示不使用该功能
+     2.   `float TimeToDisplay`：消息在屏幕上停留的时间
+     3.   `FColor DisplayColor`：消息的颜色
+     4.   `const FString &DebugMessage`：消息的内容
+     5.   `bool bNewerOnTop`：输出的顺序，在顶部新行还是底部新行，通常使用默认值
+     6.   `const FVector2D &TextScale`：更改消息的大小，通常使用默认值
+
+     ```c++
+     #include "Engine/Engine.h"
+     
+     GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, Name);
+     GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, State, true, FVector2D(1.5f, 1.5f));
+     ```
+
+## 3.5	总结
+
+```c++
+void ABasicGeometryActor::printStringTypes(){
+	FString Name = "John Connor";
+	int WeaponNum = 4;
+	float Health = 34.435235f;
+	bool IsDead = false;
+	FString WeaponNumStr = "Weapons num = " + FString::FromInt(WeaponNum);
+	FString HealthStr = "Health = " + FString::SanitizeFloat(Health);
+	FString IsDeadStr = "IsDead = " + FString(IsDead ? "true" : "false");
+	FString State = FString::Printf(TEXT("\n == All State == \n %s \n %s \n %s"), *WeaponNumStr, *HealthStr, *IsDeadStr);
+
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, Name);
+	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green, State, true, FVector2D(1.5f, 1.5f));
+}
+```
+
