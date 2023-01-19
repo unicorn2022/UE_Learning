@@ -84,7 +84,7 @@
           }
           ```
 
-# 二、记录宏 `UE_LOG`
+# 二、宏 `UE_LOG`：输出日志信息
 
 ## 2.1	输出字符串
 
@@ -266,3 +266,217 @@ void ABasicGeometryActor::printStringTypes(){
 }
 ```
 
+# 四、宏`UPROPERTY`：定义Actor属性
+
+作用：
+
+1.   在编辑器中提供变量，并查看属性的访问说明符和元信息
+
+## 4.1	定义变量
+
+1.   定义变量
+
+     ```c++
+     UCLASS()
+     class UE_CPP_API ABasicGeometryActor : public AActor{
+     	GENERATED_BODY()
+     	
+     public:	
+     	// Sets default values for this actor's properties
+     	ABasicGeometryActor();
+     
+     protected:
+     	// 在游戏开始或生成时调用
+     	virtual void BeginPlay() override;
+     	
+     protected:
+     	// 当前actor的属性
+     	UPROPERTY(EditAnywhere, Category = "Weapon")
+     	int32 WeaponNum = 4;
+     
+     	UPROPERTY(EditDefaultsOnly, Category = "State")
+     	int32 KillNum = 7;
+     
+     	UPROPERTY(EditInstanceOnly, Category = "Health")
+     	float Health = 34.435235f;
+     
+     	UPROPERTY(EditAnywhere, Category = "Health")
+     	bool IsDead = false;
+     
+     	UPROPERTY(VisibleAnywhere, Category = "Weapon")
+     	bool HasWeapon = true;
+     
+     public:	
+     	// 每一帧调用一次
+     	virtual void Tick(float DeltaTime) override;
+     };
+     ```
+
+2.   不同说明符的含义：
+
+     1.   `EditAnywhere`：在原型(父类/子类)、实例中均可编辑
+     2.   `EditDefaultsOnly`：只能在原型(父类/子类)中编辑
+     3.   `EditInstanceOnly`：只能在实例中编辑
+     4.   `VisibleAnywhere`：在原型(父类/子类)、实例中均可见，但不可编辑
+     5.   `VisibleDefaultsOnly`：只能在原型(父类/子类)中可见
+     6.   `VisibleInstanceOnly`：只能在实例中可见
+
+3.   `Category`：当前变量所属类别
+
+## 4.2	获取Actor名称
+
+```c++
+UE_LOG(LogBasicGeometry, Warning, TEXT("Actor name %s"), *GetName());
+```
+
+# 五、组件--F变换类型`Transform`
+
+## 5.1	为Actor创建网格体
+
+```c++
+#include "Components/StaticMeshComponent.h"
+UCLASS()
+class UE_CPP_API ABasicGeometryActor : public AActor{
+	GENERATED_BODY()
+
+public:
+	// 组件的网格体
+	UPROPERTY(VisibleAnywhere)
+	UStaticMeshComponent* BaseMesh;
+    ...
+}
+```
+
+```c++
+ABasicGeometryActor::ABasicGeometryActor(){
+    ...
+	// CreateDefaultSubobject: 创建一个默认的对象, 参数如下
+	// (1)SubobjectName: 对象的名称
+	// (2)bTransient = false: 
+	BaseMesh = CreateDefaultSubobject<UStaticMeshComponent>("BaseMesh");
+	// 指定根组件
+	SetRootComponent(BaseMesh);
+}
+```
+
+## 5.2	获取Actor的`Transform`信息
+
+```c++
+void ABasicGeometryActor::printTransform(){
+	FTransform Transform = GetActorTransform();
+	FVector Location = Transform.GetLocation();
+	FRotator Rotator = Transform.Rotator();
+	FVector Scale = Transform.GetScale3D();
+
+	UE_LOG(LogBasicGeometry, Warning, TEXT("Actor name %s"), *GetName());
+	UE_LOG(LogBasicGeometry, Warning, TEXT("Transform %s"), *Transform.ToString());
+	UE_LOG(LogBasicGeometry, Warning, TEXT("Location %s"), *Location.ToString());
+	UE_LOG(LogBasicGeometry, Warning, TEXT("Rotator %s"), *Rotator.ToString());
+	UE_LOG(LogBasicGeometry, Warning, TEXT("Scale %s"), *Scale.ToString());
+	UE_LOG(LogBasicGeometry, Error, TEXT("Human transform %s"), *Transform.ToHumanReadableString());
+}
+```
+
+## 5.3	Actor随时间移动
+
+```c++
+UCLASS()
+class UE_CPP_API ABasicGeometryActor : public AActor{
+    ...
+protected:
+	// 当前actor的属性
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float Amplitude = 50.0f;
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float Frequency = 2.0f;
+    ...
+private:
+	FVector InitialLocation;
+};
+```
+
+```c++
+// 在游戏开始或生成时调用
+void ABasicGeometryActor::BeginPlay(){
+	Super::BeginPlay();
+	InitialLocation = GetActorLocation();
+}
+
+// 每一帧调用一次
+void ABasicGeometryActor::Tick(float DeltaTime){
+	Super::Tick(DeltaTime);
+
+	// 运动轨迹: z = z0 + A * sin(f * t)
+	FVector CurrentLocation = GetActorLocation();
+	float Time = GetWorld()->GetTimeSeconds();
+	CurrentLocation.Z = InitialLocation.Z + Amplitude * FMath::Sin(Frequency * Time);
+	SetActorLocation(CurrentLocation);
+}
+```
+
+# 六、宏`USTRUCT、UENUM`
+
+## 6.1	扩展enum
+
+```c++
+// 在蓝图中可用
+// UE的枚举类名称都是以E开头的
+// uint8表示unsigend char, 表示该枚举的最大表示元素个数为255
+UENUM(BlueprintType)
+enum class EMovementType : uint8{
+	Sin,
+	Static
+};
+UCLASS()
+class UE_CPP_API ABasicGeometryActor : public AActor
+{
+	...
+protected:
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	EMovementType MoveType = EMovementType::Static;
+    ...
+}
+```
+
+```c++
+// 每一帧调用一次
+void ABasicGeometryActor::Tick(float DeltaTime){
+	Super::Tick(DeltaTime);
+
+	switch (MoveType) {
+	case EMovementType::Sin:
+	{
+		// 运动轨迹: z = z0 + A * sin(f * t)
+		FVector CurrentLocation = GetActorLocation();
+		float Time = GetWorld()->GetTimeSeconds();
+		CurrentLocation.Z = InitialLocation.Z + Amplitude * FMath::Sin(Frequency * Time);
+		SetActorLocation(CurrentLocation);
+	}
+		break;
+	case EMovementType::Static:
+		break;
+	default:
+		break;
+	}
+}
+```
+
+## 6.2	扩展struct
+
+```c++
+// USTRUCT(BlueprintType): 让该struct在蓝图中可用
+// UE的结构体名称都是以F开头的
+USTRUCT(BlueprintType)
+struct FGeometryData {
+	GENERATED_USTRUCT_BODY()
+	
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float Amplitude = 50.0f;
+	
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	float Frequency = 2.0f;
+	
+	UPROPERTY(EditAnywhere, Category = "Movement")
+	EMovementType MoveType = EMovementType::Static;
+};
+```
