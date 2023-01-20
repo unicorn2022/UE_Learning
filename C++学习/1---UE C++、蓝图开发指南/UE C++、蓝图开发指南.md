@@ -391,6 +391,7 @@ protected:
 	float Frequency = 2.0f;
     ...
 private:
+    // Actor的初始位置
 	FVector InitialLocation;
 };
 ```
@@ -419,7 +420,7 @@ void ABasicGeometryActor::Tick(float DeltaTime){
 ## 6.1	扩展enum
 
 ```c++
-// 在蓝图中可用
+// UENUM(BlueprintType):在蓝图中可用
 // UE的枚举类名称都是以E开头的
 // uint8表示unsigend char, 表示该枚举的最大表示元素个数为255
 UENUM(BlueprintType)
@@ -480,3 +481,249 @@ struct FGeometryData {
 	EMovementType MoveType = EMovementType::Static;
 };
 ```
+
+# 七、材质
+
+## 7.1	设置材质颜色
+
+1.   首先，在UE中创建一个材质，并将其`基础颜色`属性提升为变量，变量名为`Color`
+2.   将该材质赋给场景中的Actor
+3.   修改ABasicGeometryActor代码
+
+```c++
+#include "Materials/MaterialInstanceDynamic.h"
+void ABasicGeometryActor::SetColor(const FLinearColor& Color){
+	// 动态创建一个材质实例, 编号为0
+	UMaterialInstanceDynamic* DynMaterial = BaseMesh->CreateAndSetMaterialInstanceDynamic(0);
+	// 通过SetVectorParameterValue, 设置材质的颜色
+	if (DynMaterial) {
+		DynMaterial->SetVectorParameterValue("Color", Color);
+	}
+}
+```
+
+# 八、计时器 `FTimerHandle`
+
+## 8.1	启用计时器并设置回调函数
+
+```c++
+USTRUCT(BlueprintType)
+struct FGeometryData {
+	...
+	UPROPERTY(EditAnywhere, Category = "Design")
+	float TimerRate = 3.0f;
+};
+
+UCLASS()
+class UE_CPP_API ABasicGeometryActor : public AActor
+{
+	...
+private:
+    ...
+	// 用于访问计时器
+	FTimerHandle TimerHandle;
+	void OnTimerFired();
+};
+```
+
+```c++
+void ABasicGeometryActor::BeginPlay(){
+	Super::BeginPlay();
+
+	InitialLocation = GetActorLocation();
+
+	SetColor(GeometryData.Color);
+
+	// 用全局全局计时器管理为当前Actor的TimerHandle赋值, 参数:
+	// (1) InOutHandle:		需要被赋值的FTimerHandle的引用
+	// (2) InObj:			对象的指针
+	// (3) InTimerMethod:	计时器触发时的回调函数
+	// (4) InRate:			计时器频率
+	// (5) InbLoop:			计时器是否能重复触发
+	// (6) InFirstDelay:	计时器第一次触发的延迟
+	GetWorldTimerManager().SetTimer(TimerHandle, this, &ABasicGeometryActor::OnTimerFired, GeometryData.TimerRate, true);
+}
+void ABasicGeometryActor::OnTimerFired(){
+	const FLinearColor NewColor = FLinearColor::MakeRandomColor();
+	UE_LOG(LogBasicGeometry, Display, TEXT("Color to set up: %s"), *NewColor.ToString());
+	SetColor(NewColor);
+}
+```
+
+## 8.2	计时器使用N次后停止计时器
+
+```c++
+UCLASS()
+class UE_CPP_API ABasicGeometryActor : public AActor{
+	...
+private:
+    ...
+	// 用于访问计时器
+	FTimerHandle TimerHandle;
+    const int32 MaxTimerCount = 5;
+	int32 TimerCount = 0;
+    
+	void OnTimerFired();
+};
+```
+
+```c++
+void ABasicGeometryActor::OnTimerFired(){
+	if (++TimerCount <= MaxTimerCount) {
+		const FLinearColor NewColor = FLinearColor::MakeRandomColor();
+		UE_LOG(LogBasicGeometry, Display, TEXT("TimerCount %i, Color to set up: %s"), TimerCount, *NewColor.ToString());
+		SetColor(NewColor);
+	}
+	// 将计时器终止
+	else {
+		UE_LOG(LogBasicGeometry, Display, TEXT("TimerHandle has been stopped"));
+		GetWorldTimerManager().ClearTimer(TimerHandle);
+	}
+}
+```
+
+# 九、AActor类对象生成
+
+## 9.1	动态创建Actor
+
+1.   需要一个额外的Actor，称为`Hub`
+
+2.   新建C++类`GeometryHubActor`，类型为`Actor`，该类将负责创建`BasicGeometry Actor`，即`Hub`的作用
+
+3.   在当前Actor的`BeginPlay()`时，动态生成Actor
+
+     1.   `World->SpawnActor()`：同时调用Actor的**构造函数**和**BeginPlay()**
+     2.   `World->SpawnActorDeferred()`：只调用Actor的**构造函数**
+          1.   后续需要通过`Geometry->FinishSpawning()`调用Actor的BeginPlay()
+          2.   在这之间，可以修改Actor的默认属性
+
+     ```c++
+     void AGeometryHubActor::BeginPlay(){
+     	Super::BeginPlay();
+     	
+     	// 获取当前世界的指针
+     	UWorld* World = GetWorld();
+     	if (World) {
+     		for (int32 i = 0; i < 10; i++) {
+     			const FTransform GeometryTransform = FTransform(FRotator::ZeroRotator, FVector(0.0f, 300.0f * i, 300.0f));
+     			// 在当前世界, 动态生成一个Actor, 调用其构造函数和BeginPlay(), 参数如下:
+     			// (1) Class:		创建的Actor的类型
+     			// (2) Transform:	初始化变换
+     			ABasicGeometryActor* Geometry = World->SpawnActor<ABasicGeometryActor>(GeometryClass, GeometryTransform);
+     
+     			if (Geometry) {
+     				FGeometryData Data;
+     				Data.MoveType = FMath::RandBool() ? EMovementType::Static : EMovementType::Sin;
+     				Geometry->SetGeometryData(Data);
+     			}
+     		}
+     
+     		for (int32 i = 0; i < 10; i++) {
+     			const FTransform GeometryTransform = FTransform(FRotator::ZeroRotator, FVector(0.0f, 300.0f * i, 700.0f));
+     			// 在当前世界, 动态生成一个Actor, 只调用其构造函数, 参数如下:
+     			// (1) Class:		创建的Actor的类型
+     			// (2) Transform:	初始化变换
+     			ABasicGeometryActor* Geometry = World->SpawnActorDeferred<ABasicGeometryActor>(GeometryClass, GeometryTransform);
+     
+     			if (Geometry) {
+     				FGeometryData Data;
+     				Data.Color = FLinearColor::MakeRandomColor();
+     				Geometry->SetGeometryData(Data);
+     				// 终止构建, 调用其BeginPlay()
+     				Geometry->FinishSpawning(GeometryTransform);
+     			}
+     		}
+     	}
+     }
+     ```
+
+4.   三种类指针：
+
+     ```c++
+     // TSubclassOf: 仅能指向特定类及其子类
+     UPROPERTY(EditAnywhere)
+     TSubclassOf<ABasicGeometryActor>GeometryClass;
+     
+     // UClass*: 可以指向任意一个类
+     UPROPERTY(EditAnywhere)
+     UClass* Class;
+     
+     // ABasicGeometryActor*: 仅能指向ABasicGeometryActor的实例化对象
+     UPROPERTY(EditAnywhere)
+     ABasicGeometryActor* GeometryObject;
+     ```
+
+5.   将`GeometryClass`赋值为`BP_BasicGeometryActor`，并将`BP_BasicGeometryActor`设置默认值
+
+     <img src="AssetMarkdown/image-20230120122209444.png" alt="image-20230120122209444" style="zoom:80%;" />
+
+## 9.2	让`GeometryHubActor`控制更多的Actor的动态生成
+
+1.   将`BP_BasicGeometryActor`重命名为`BP_CubeGeometryActor`，并添加`BP_SphereGeometryActor`
+2.   修改`GeometryHubActor1`的`GeometryPayloads`属性
+
+```c++
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "BasicGeometryActor.h"
+#include "GeometryHubActor.generated.h"
+
+USTRUCT(BlueprintType)
+struct FGeometryPayload {
+	GENERATED_USTRUCT_BODY()
+
+	// TSubclassOf: 仅能指向特定类及其子类
+	UPROPERTY(EditAnywhere)
+	TSubclassOf<ABasicGeometryActor>GeometryClass;
+
+	UPROPERTY(EditAnywhere)
+	FGeometryData Data;
+
+	UPROPERTY(EditAnywhere)
+	FTransform InitialTransform;
+};
+
+
+UCLASS()
+class UE_CPP_API AGeometryHubActor : public AActor{
+	GENERATED_BODY()
+	
+public:	
+	// Sets default values for this actor's properties
+	AGeometryHubActor();
+
+	UPROPERTY(EditAnywhere)
+	TArray<FGeometryPayload> GeometryPayloads;
+
+protected:
+	// Called when the game starts or when spawned
+	virtual void BeginPlay() override;
+
+
+public:	
+	// Called every frame
+	virtual void Tick(float DeltaTime) override;
+
+};
+```
+
+```c++
+void AGeometryHubActor::BeginPlay(){
+	Super::BeginPlay();
+	
+	if (!GetWorld()) return;
+	// 获取当前世界的指针
+	UWorld* World = GetWorld();
+	for (const FGeometryPayload Payload : GeometryPayloads) {
+		ABasicGeometryActor* Geometry = World->SpawnActorDeferred<ABasicGeometryActor>(Payload.GeometryClass, Payload.InitialTransform);
+
+		if (Geometry) {
+			Geometry->SetGeometryData(Payload.Data);
+			Geometry->FinishSpawning(Payload.InitialTransform);
+		}
+	}
+}
+```
+
