@@ -727,3 +727,198 @@ void AGeometryHubActor::BeginPlay(){
 }
 ```
 
+# 十、代表宏`UFUNCTION`
+
+## 10.1	允许访问蓝图上的属性
+
+1.   在`UPROPERTY`中，添加`BlueprintReadWrite`，表示在蓝图中可修改
+2.   在`UPROPERTY`中，添加`BlueprintReadOnly`，表示在蓝图中只可读
+
+```c++
+UCLASS()
+class UE_CPP_API AGeometryHubActor : public AActor{
+    ...
+protected:
+	// 当前actor的属性
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Geometry Data")
+	FGeometryData GeometryData;
+    ...
+}
+```
+
+>   如图，由于`FGeometryData`结构体中，`TimerRate`并没有添加`BlueprintReadWrite`，因此在蓝图中无法访问到该属性
+>
+>   <img src="AssetMarkdown/image-20230120185244253.png" alt="image-20230120185244253" style="zoom:67%;" />
+
+## 10.2	让函数在蓝图中可访问
+
+```c++
+UCLASS()
+class UE_CPP_API AGeometryHubActor : public AActor{
+    ...
+public:
+    UFUNCTION(BlueprintCallable)
+    FGeometryData GetGeometryData() const { return GeometryData; }
+    ...
+}
+
+```
+
+## 10.3	委托 delegate
+
+1.   委托的作用：存储对具有任意类的特定签名的方法的引用，并在必要时调用此方法
+
+2.   之前创建计时器时，便使用了委托
+
+     ```c++
+     GetWorldTimerManager().SetTimer(TimerHandle, this, &ABasicGeometryActor::OnTimerFired, GeometryData.TimerRate, true);
+     ```
+
+     1.   我们将计时器传递给管理器`OnTimerFired`函数
+     2.   每次触发计时器时，计时器都会调用该函数
+
+3.   创建自己的委托
+
+     1.   `DECLARE_DELEGATE`：该委托仅在C++可用，只有一个client可以预定它
+     2.   `DECLARE_MULTICAST_DELEGATE`：该委托仅在C++可用，多个client可以预定它
+     3.   `DECLARE_DYNAMIC_DELEGATE`：该委托可在C++/蓝图中使用，只有一个client可以预定它
+     4.   `DECLARE_DYNAMIC_MULTICAST_DELEGATE`：该委托可在C++/蓝图中使用，多个client可以预定它
+     5.   `DECLARE_DELEGATE_OneParam`：委托与参数的组合，最多有9个参数，直接在原有委托宏的后面添加`_OneParam`~`_NineParams`即可
+
+     ```c++
+     #pragma once
+     
+     #include "CoreMinimal.h"
+     #include "GameFramework/Actor.h"
+     #include "Components/StaticMeshComponent.h"
+     #include "BasicGeometryActor.generated.h" 
+     
+     // 声明委托
+     DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnColorChanged, const FLinearColor&, Color, const FString&, Name);
+     DECLARE_MULTICAST_DELEGATE_OneParam(FOnTimerFinished, AActor*);
+     
+     UCLASS()
+     class UE_CPP_API ABasicGeometryActor : public AActor
+     {
+     	GENERATED_BODY()
+     	
+     public:	
+         ...
+     	UPROPERTY(BlueprintAssignable)
+     	FOnColorChanged OnColorChanged;
+     	FOnTimerFinished OnTimerFinished;
+         ...
+     };
+     ```
+
+     ```c++
+     void ABasicGeometryActor::OnTimerFired(){
+     	if (++TimerCount <= MaxTimerCount) {
+     		const FLinearColor NewColor = FLinearColor::MakeRandomColor();
+     		UE_LOG(LogBasicGeometry, Display, TEXT("TimerCount %i, Color to set up: %s"), TimerCount, *NewColor.ToString());
+     		SetColor(NewColor);
+             
+             // 广播委托
+     		OnColorChanged.Broadcast(NewColor, GetName());
+     	}
+     	else {
+     		UE_LOG(LogBasicGeometry, Display, TEXT("TimerHandle has been stopped"));
+     		GetWorldTimerManager().ClearTimer(TimerHandle);
+             
+             // 广播委托
+     		OnTimerFinished.Broadcast(this);
+     	}
+     }
+
+4.   在蓝图中绑定委托：
+
+     <img src="AssetMarkdown/image-20230120193626821.png" alt="image-20230120193626821" style="zoom:80%;" />
+
+5.   在代码中绑定委托：
+
+     ```c++
+     UCLASS()
+     class UE_CPP_API AGeometryHubActor : public AActor{
+     	...
+     private:
+     	// 添加到动态委托中的函数, 必须用UFUNCTION宏标记, 这与UE的内存模型有关
+     	UFUNCTION()
+     	void OnColorChanged(const FLinearColor& Color, const FString& Name);
+     	void OnTimerFinished(AActor* Actor);
+     };
+     ```
+
+     ```c++
+     void AGeometryHubActor::BeginPlay(){
+     	Super::BeginPlay();
+     	
+     	if (!GetWorld()) return;
+     	// 获取当前世界的指针
+     	UWorld* World = GetWorld();
+     	for (const FGeometryPayload Payload : GeometryPayloads) {
+     		ABasicGeometryActor* Geometry = World->SpawnActorDeferred<ABasicGeometryActor>(Payload.GeometryClass, Payload.InitialTransform);
+     
+     		if (Geometry) {
+     			Geometry->SetGeometryData(Payload.Data);
+     			// 绑定委托(回调函数)
+     			Geometry->OnColorChanged.AddDynamic(this, &AGeometryHubActor::OnColorChanged);
+     			Geometry->OnTimerFinished.AddUObject(this, &AGeometryHubActor::OnTimerFinished);
+                 
+                 // 终止Actor的动态生成, 调用其BeginPlay()
+     			Geometry->FinishSpawning(Payload.InitialTransform);
+     		}
+     	}
+     }
+     
+     void AGeometryHubActor::OnColorChanged(const FLinearColor& Color, const FString& Name){
+     	UE_LOG(LogGeometryHub, Warning, TEXT("Actor name: %s, Color %s"), *Name, *Color.ToString());
+     }
+     
+     void AGeometryHubActor::OnTimerFinished(AActor* Actor){
+     	if (!Actor)return;
+     	UE_LOG(LogGeometryHub, Error, TEXT("Timer finished: %s"), *Actor->GetName());
+     }
+     ```
+
+## 10.4	摧毁Actor
+
+1.   在`AGeometryHubActor`中，调用`Destroy()`摧毁Actor
+
+     ```c++
+     void AGeometryHubActor::OnTimerFinished(AActor* Actor){
+     	if (!Actor)return;
+     	UE_LOG(LogGeometryHub, Error, TEXT("Timer finished: %s"), *Actor->GetName());
+     
+     	ABasicGeometryActor* Geometry = Cast<ABasicGeometryActor>(Actor);
+     	if (!Geometry)return;
+     	UE_LOG(LogGeometryHub, Error, TEXT("Cast is success, amplitude %f"), Geometry->GetGeometryData().Amplitude);
+     
+     	// 摧毁该Actor, UE会自动调用其EndPlay()
+     	Geometry->Destroy();
+     	//Geometry->SetLifeSpan(2.0f);
+     }
+     ```
+
+2.   重写`ABasicGeometryActor`中的`EndPlay()`函数
+
+     ```c++
+     UCLASS()
+     class UE_CPP_API ABasicGeometryActor : public AActor
+     {
+         ...
+     protected:
+     	// 摧毁该Actor时调用
+     	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+         ...
+     }
+     ```
+
+     ```c++
+     // 摧毁该Actor时调用
+     void ABasicGeometryActor::EndPlay(const EEndPlayReason::Type EndPlayReason){
+     	Super::EndPlay(EndPlayReason);
+     	UE_LOG(LogBasicGeometry, Error, TEXT("Actor is dead %s"), *GetName());
+     }
+
+
+
