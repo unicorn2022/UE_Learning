@@ -1022,3 +1022,139 @@ public:
 3.   在`项目设置`中指定
 
 <img src="AssetMarkdown/image-20230122193841723.png" alt="image-20230122193841723" style="zoom:80%;" />
+
+# 十二、APawn类：键盘输入
+
+1.   在`世界场景设置 => 游戏模式重载`中，选择`UE_CPPGameModeBase`，这是UE创建的默认游戏模式设置类
+
+2.   创建C++类`SandBoxPawn`，继承于`Pawn`
+
+     1.   默认的`Pawn`类与`Actor`类类似，但是多了`SetupPlayerInputComponent`函数，用于配置用户输入
+
+3.   修改`UE_CPPGameModeBase`，设置默认`Pawn`类
+
+     ```c++
+     #pragma once
+     
+     #include "CoreMinimal.h"
+     #include "GameFramework/GameModeBase.h"
+     #include "UE_CPPGameModeBase.generated.h"
+     
+     UCLASS()
+     class UE_CPP_API AUE_CPPGameModeBase : public AGameModeBase{
+     	GENERATED_BODY()
+     
+     public:
+     	AUE_CPPGameModeBase();
+     };
+     ```
+
+     ```c++
+     #include "UE_CPPGameModeBase.h"
+     #include "SandBoxPawn.h"
+     
+     AUE_CPPGameModeBase::AUE_CPPGameModeBase(){
+     	// 通过StaticClass()获取ASandBoxPawn的静态UClass指针
+     	DefaultPawnClass = ASandBoxPawn::StaticClass();
+     }
+     
+
+4.   修改`项目设置 => 输入`，建立从鼠标/键盘输入 到 事件的映射
+
+     1.   操作映射：离散动作，仅接收一次回调事件
+          1.   如，按下某个按键
+     2.   轴映射：控件状态的连续接收，如果按住某个按钮，每个tick都会收到一个值按下按钮
+          1.   如，可以跟踪鼠标的位置
+
+     <img src="AssetMarkdown/image-20230122214233154.png" alt="image-20230122214233154" style="zoom:80%;" />
+
+5.   修改`SandBoxPawn`
+
+     ```c++
+     #pragma once
+     
+     #include "CoreMinimal.h"
+     #include "GameFramework/Pawn.h"
+     #include "SandBoxPawn.generated.h"
+     
+     UCLASS()
+     class UE_CPP_API ASandBoxPawn : public APawn
+     {
+     	GENERATED_BODY()
+     		
+     public:
+     	ASandBoxPawn();
+     
+     	// 没有视觉内容，仅包含世界上的变换
+     	UPROPERTY(VisibleAnywhere)
+     	USceneComponent* SceneComponent;
+     
+     	// 运动的速度
+     	UPROPERTY(EditAnywhere)
+     	float Velocity = 300.0f;
+     
+     protected:
+     	virtual void BeginPlay() override;
+     
+     public:	
+     	virtual void Tick(float DeltaTime) override;
+     
+     
+     	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+     
+     private:
+     	// 速度向量
+     	FVector VelocityVector = FVector::ZeroVector;
+     	// 向前运动
+     	void MoveForward(float Amount);
+     	// 向右运动
+     	void MoveRight(float Amount);
+     };
+     ```
+
+     ```c++
+     #include "SandBoxPawn.h"
+     #include "Components/InputComponent.h"
+     
+     DEFINE_LOG_CATEGORY_STATIC(LogSandBoxPawn, All, All);
+     // Sets default values
+     ASandBoxPawn::ASandBoxPawn(){
+      	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+     	PrimaryActorTick.bCanEverTick = true;
+     
+     	// 创建SceneComponent, 并设置为根组件
+     	SceneComponent = CreateDefaultSubobject<USceneComponent>("SceneComponent");
+     	SetRootComponent(SceneComponent);
+     }
+     
+     void ASandBoxPawn::Tick(float DeltaTime){
+     	Super::Tick(DeltaTime);
+     
+     	if (!VelocityVector.IsZero()) {
+     		const FVector NewLocation = GetActorLocation() + Velocity * DeltaTime * VelocityVector;
+     		SetActorLocation(NewLocation);
+     	}
+     
+     }
+     
+     // Called to bind functionality to input
+     void ASandBoxPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent){
+     	Super::SetupPlayerInputComponent(PlayerInputComponent);
+     
+     	// 设置回调函数
+     	PlayerInputComponent->BindAxis("MoveForward", this, &ASandBoxPawn::MoveForward);
+     	PlayerInputComponent->BindAxis("MoveRight", this, &ASandBoxPawn::MoveRight);
+     }
+     
+     void ASandBoxPawn::MoveForward(float Amount){
+     	UE_LOG(LogSandBoxPawn, Display, TEXT("Move Forward: %f"), Amount);
+     	VelocityVector.X = Amount;
+     }
+     
+     void ASandBoxPawn::MoveRight(float Amount){
+     	UE_LOG(LogSandBoxPawn, Display, TEXT("Move Right: %f"), Amount);
+     	VelocityVector.Y = Amount;
+     }
+     ```
+
+# 十三、APlayerController类
