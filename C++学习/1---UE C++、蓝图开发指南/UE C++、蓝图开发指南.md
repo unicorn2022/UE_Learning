@@ -920,5 +920,105 @@ public:
      	UE_LOG(LogBasicGeometry, Error, TEXT("Actor is dead %s"), *GetName());
      }
 
+# 十一、虚幻引擎主要类概述
 
+## 11.1	AActor
 
+1.   游戏世界中的所有对象都是`AActor`类型的，可以将其添加到场景中，这是UE的基类
+
+     1.   它可以时是任意几何形状、特殊效果、声音
+     2.   我们可以手动放置`Actor`，也可以在世界中动态生成`Actor`
+
+2.   `Actor`可能没有视图/外观，`Actor`可以是纯粹的逻辑
+
+     1.   如之前创建的`GeometryHubActor`
+
+3.   `Actor`由各种组件组成，组件决定了其最终外观
+
+     1.   视觉组件：网格体组件`Mesh`、粒子系统组件、文本显示组件
+     2.   逻辑组件：运动组件`VehicleMovement`
+
+4.   总结：
+
+     <img src="AssetMarkdown/image-20230122190057918.png" alt="image-20230122190057918" style="zoom:67%;" />
+
+## 11.2	APawn
+
+1.   `Pawn`是可以被控制的`Actor`，即继承并扩展了`AActor`
+     1.   可以接受来自各种输入设备的输入，并以某种方式对此输入做出反应
+2.   默认`Pawn`类：游戏开始时自动生成的`Pawn`类
+
+## 11.3	APlayerController
+
+1.   `APlayerController`：允许我们控制Actor的类，也继承与`AActor`
+
+     1.   该类没有视觉表示，是一个逻辑类
+     2.   是用户与我们管理的`spawn`之间的接口
+
+2.   `APlayerController`存在于整个游戏关卡中，而对象可以被破坏/重新生成
+
+     1.   我们可以控制不同的对象，可以在它们之间切换，也可以完全不控制任何对象
+
+3.   `APlayerController`也有输入，通常处理与特定`Pawn`无关的事件
+
+     1.   如：退出菜单、关闭声音、关闭游戏
+
+4.   `APlayerController`与`APawn`的联系与区别
+
+     1.   都存在于游戏世界中，但是`APlayerController`没有外部表示
+     2.   `PlayerController`可以拥有`Pawn`，也可以没有`Pawn`
+
+     <img src="AssetMarkdown/image-20230122191134998.png" alt="image-20230122191134998" style="zoom:67%;" />
+
+## 11.4	ACharacter
+
+1.   `ACharacter`继承自`APawn`类，会添加一些默认的功能
+     1.   胶囊体组件：负责于外界的物理交互
+     2.   网格体组件：设置角色的模型、动画
+     3.   角色移动组件：角色在环境中的移动方式，如速度、跳跃高度等
+2.   `Character`是`Pawn`的子类，因此也可以用作默认`Pawn`类
+
+<img src="AssetMarkdown/image-20230122191951271.png" alt="image-20230122191951271" style="zoom:67%;" />
+
+## 11.5	AAIController
+
+1.   `AAIController`控制AI的运动，主要是一个行为树
+2.   `Pawn`不仅可以被`PlayerController`拥有，也可以被`AIController`拥有
+
+<img src="AssetMarkdown/image-20230122192338662.png" alt="image-20230122192338662" style="zoom:80%;" />
+
+## 11.6	GameModeBase
+
+1.   `GameModeBase`指定游戏关卡的各种子设置，并定义了游戏的一般规则
+     1.   如游戏的时间、可以参加的玩家人数、`bot`的个数、团队的分布情况、玩家是否可以重生
+2.   可以在`世界场景设置 => 游戏模式重载`中，设置默认的游戏模式
+
+## 11.7	HUD
+
+1.   `HUD`：Head-up display，负责用户界面，通常不会直接使用
+2.   UE中的所有接口都是通过小部件完成的，HUD可以用作所有小部件的管理类
+
+## 11.8	旁观者类
+
+1.   是角色死亡后，控制着拥有的特殊`Pawn`类
+2.   通常是一个`Camera`，我们可以为其提供黑白效果
+
+## 11.9	PlayerState
+
+1.   `PlayerState`也没有外观，通常用于存储玩家的各种统计信息
+     1.   如：消灭了多少对手，死亡了几次
+2.   `PlayerState`也会存在于整个关卡中
+
+## 11.10	GameState
+
+1.   `GameState`用在多人游戏逻辑中，通过它将有关游戏过程的各种信息传输到位于`GameMode`中的客户端
+2.   在多人游戏中，`GameMode`类仅位于服务器上
+
+## 11.11	不同关卡之间的切换
+
+1.   切换关卡时，会重建所有上述类
+2.   `GameInstance`会贯穿整个游戏，可以在其中存储不依赖特定关卡的全局信息
+     1.   如：图形设置、声音设置、直接在已加载关卡上的信息
+3.   在`项目设置`中指定
+
+<img src="AssetMarkdown/image-20230122193841723.png" alt="image-20230122193841723" style="zoom:80%;" />
