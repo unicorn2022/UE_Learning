@@ -1140,7 +1140,8 @@ public:
      // Called to bind functionality to input
      void ASandBoxPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent){
      	Super::SetupPlayerInputComponent(PlayerInputComponent);
-     
+     	if (!PlayerInputComponent) return;
+         
      	// 设置回调函数
      	PlayerInputComponent->BindAxis("MoveForward", this, &ASandBoxPawn::MoveForward);
      	PlayerInputComponent->BindAxis("MoveRight", this, &ASandBoxPawn::MoveRight);
@@ -1158,3 +1159,382 @@ public:
      ```
 
 # 十三、APlayerController类
+
+1.   为`SandboxPawn`添加视觉效果
+
+     ```c++
+     // 向前声明Camera组件
+     class UCameraComponent;
+     
+     UCLASS()
+     class UE_CPP_API ASandBoxPawn : public APawn{		
+     public:
+     	...
+     	// ASandBoxPawn的视觉内容
+     	UPROPERTY(VisibleAnywhere)
+     	UStaticMeshComponent* StaticMeshComponent;
+     	UPROPERTY(VisibleAnywhere)
+     	UCameraComponent* CameraComponent;
+     	...
+     };
+     
+     ```
+
+     ```c++
+     #include "Components/StaticMeshComponent.h"
+     #include "Camera/CameraComponent.h"
+     
+     ASandBoxPawn::ASandBoxPawn(){
+      	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+     	PrimaryActorTick.bCanEverTick = true;
+     
+     	// 创建SceneComponent, 并设置为根组件
+     	SceneComponent = CreateDefaultSubobject<USceneComponent>("SceneComponent");
+     	SetRootComponent(SceneComponent);
+     
+     	// 创建StaticMeshComponent, 并设置其父组件
+     	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("StaticMeshComponent");
+     	StaticMeshComponent->SetupAttachment(GetRootComponent());
+     
+     	// 创建CameraComponent, 并设置其父组件
+     	CameraComponent = CreateDefaultSubobject<UCameraComponent>("CameraComponent");
+     	CameraComponent->SetupAttachment(GetRootComponent());
+     }
+     ```
+
+2.   基于`SandboxPawn`创建蓝图类`BP_SandboxPawn`，然后设置Mesh和Camera的位置
+
+3.   基于`UE_CPPGameModeBase`创建蓝图类`BP_UE_CPPGameModeBase`
+
+4.   将默认Pawn类设置为`BP_SandboxPawn`，游戏模式重载设置为`BP_UE_CPPGameModeBase`
+
+5.   在`项目设置 => 输入`处，新增操作映射`ChangePawn`，切换键为`空格键`
+
+6.   新建C++类`SandboxPlayerController`，继承于`PlayerController`
+
+7.   在`UE_CPPGameModeBase.cpp`中，设置玩家控制器类为`SandboxPlayerController`
+
+     ```c++
+     #include "UE_CPPGameModeBase.h"
+     #include "SandBoxPawn.h"
+     #include "SandboxPlayerController.h"
+     
+     AUE_CPPGameModeBase::AUE_CPPGameModeBase(){
+     	// 通过StaticClass()获取ASandBoxPawn的静态UClass指针
+     	DefaultPawnClass = ASandBoxPawn::StaticClass();
+     	// 设置玩家控制器类
+     	PlayerControllerClass = ASandboxPlayerController::StaticClass();
+     }
+
+8.   修改`SandboxPlayerController`
+
+     ```c++
+     #pragma once
+     
+     #include "CoreMinimal.h"
+     #include "GameFramework/PlayerController.h"
+     #include "SandboxPlayerController.generated.h"
+     
+     UCLASS()
+     class UE_CPP_API ASandboxPlayerController : public APlayerController{
+     	GENERATED_BODY()
+     
+     protected:
+     	virtual void SetupInputComponent() override;
+     	virtual void BeginPlay() override;
+     
+     private:
+     	UPROPERTY()
+     	TArray<AActor*> Pawns;
+     
+     	int32 CurrentPawnIndex = 0;
+     
+     	void ChangePawn();
+     };
+     ```
+
+     ```c++
+     #include "SandboxPlayerController.h"
+     #include "Components/InputComponent.h"
+     #include "Kismet/GameplayStatics.h"
+     #include "SandBoxPawn.h"
+     
+     DEFINE_LOG_CATEGORY_STATIC(LogSandboxPlayerController, All, All);
+     void ASandboxPlayerController::SetupInputComponent(){
+     	Super::SetupInputComponent();
+     	if (InputComponent) {
+     		// 在Pawn中, InputComponent是函数的参数
+     		// 在PlayerController中, InputComponent是该类的成员
+     		InputComponent->BindAction("ChangePawn", IE_Pressed, this, &ASandboxPlayerController::ChangePawn);
+     	}
+     }
+     
+     void ASandboxPlayerController::BeginPlay(){
+     	Super::BeginPlay();
+     	// 获取类型为ASandBoxPawn的所有对象
+     	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASandBoxPawn::StaticClass(), Pawns);
+     }
+     
+     void ASandboxPlayerController::ChangePawn(){
+     	if (Pawns.Num() <= 1) return;
+     
+     	// 获取下一个SandBoxPawn类
+     	CurrentPawnIndex = (CurrentPawnIndex + 1) % Pawns.Num();
+     	ASandBoxPawn* CurrentPawn = Cast<ASandBoxPawn>(Pawns[CurrentPawnIndex]);
+     	if (!CurrentPawn) return;
+     
+     	// 更改当前Pawn
+     	UE_LOG(LogSandboxPlayerController, Error, TEXT("Change player pawn"));
+     	Possess(CurrentPawn);
+     }
+
+9.   修改`SandBoxPawn`，设置其被`SandboxPlayerController`接管时的回调函数
+
+     ```c++
+     UCLASS()
+     class UE_CPP_API ASandBoxPawn : public APawn{
+         ...
+     public:
+     	// 被NewController接管时调用
+     	virtual void PossessedBy(AController* NewController) override;
+     	// 被取消接管时调用
+     	virtual void UnPossessed() override;
+     };
+     ```
+
+     ```c++
+     // 被NewController接管时调用
+     void ASandBoxPawn::PossessedBy(AController* NewController){
+     	Super::PossessedBy(NewController);
+         if (!NewController)return;
+     	UE_LOG(LogSandBoxPawn, Error, TEXT("%s possessed %s"), *NewController->GetName(), *GetName());
+     }
+     // 被取消接管时调用
+     void ASandBoxPawn::UnPossessed(){
+     	Super::UnPossessed();
+     	UE_LOG(LogSandBoxPawn, Warning, TEXT("%s unpossessed"), *GetName());
+     }
+     ```
+
+10.   打开UE，向场景中放入几个`SandBoxPawn`，然后运行，使用`空格键`切换控制物
+
+      1.   可以看到，不被`PlayerController`控制的`Pawn`，会默认被`AIController`控制
+      2.   在`BP_SandBoxPawn => 细节 => Pawn => 自动控制AI`，将其设置为`已禁用`，即可不让其被`AIController`自动控制
+
+      <img src="AssetMarkdown/image-20230123195218970.png" alt="image-20230123195218970"  />
+
+11.   修复bug：在移动的过程中更改控制的`Pawn`，会导致`Pawn`无限移动
+
+      ```c++
+      void ASandBoxPawn::Tick(float DeltaTime){
+      	Super::Tick(DeltaTime);
+      
+      	if (!VelocityVector.IsZero()) {
+      		const FVector NewLocation = GetActorLocation() + Velocity * DeltaTime * VelocityVector;
+      		SetActorLocation(NewLocation);
+      		// 每个tick都清空VelocityVector, 这样只有持续输入时, 才能持续移动
+      		VelocityVector = FVector::ZeroVector;
+      	}
+      }
+
+# 十四、模块、目标、UnrealBuildTool虚幻建造工具
+
+## 14.1	UE_CPP.Build.cs
+
+```c#
+using UnrealBuildTool;
+
+public class UE_CPP : ModuleRules{
+	public UE_CPP(ReadOnlyTargetRules Target) : base(Target){
+		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+	
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+
+		PrivateDependencyModuleNames.AddRange(new string[] {  });
+
+		// Uncomment if you are using Slate UI
+		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+		
+		// Uncomment if you are using online features
+		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
+
+		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
+	}
+}
+```
+
+1.   `UE_CPP.Build.cs`：
+     1.   设置了将构建项目源代码`UE_CPP`的规则
+     2.   如：点击`本地Windows调试器`按钮来开始构建时，将启动`UnrealBuildTool`的特殊实体程序
+          1.   该程序可以在`UE_4.27\Engine\Binaries\DotNET`中找到
+          2.   VS会根据使用各种逗号分隔的参数启动该程序
+          3.   通常，我们可以创建某种bat文件来构建我们的游戏，并通过设置，对源代码进行编译
+     3.   所有引擎代码均由模块组成，在每个build文件中，模块类都继承自`ModuleRules`
+2.   `PublicDependencyModuleNames`：
+     1.   指示我们的项目所依赖的模块，默认情况下，添加了4个模块
+     2.   在`UE4 => Source => Runtime`中，可以看到引擎自带的模块，其中就有默认的这4个模块，每个模块都有一个`xxx.Build.cs`
+     3.   也可以在此处添加对各种第三方库的依赖关系
+3.   `PCHUsage`：
+     1.   预编译头的相关设置
+
+## 14.2	UE_CPP
+
+```c++
+#pragma once
+
+#include "CoreMinimal.h"
+```
+
+```c++
+#include "UE_CPP.h"
+#include "Modules/ModuleManager.h"
+
+IMPLEMENT_PRIMARY_GAME_MODULE( FDefaultGameModuleImpl, UE_CPP, "UE_CPP" );
+```
+
+1.   在此处，使用特殊的宏指定了主要的游戏模块
+2.   通常，一个游戏可以由几个模块组成，此处是默认模块
+
+## 14.3	UE_CPP.uproject
+
+```json
+{
+	"FileVersion": 3,
+	"EngineAssociation": "4.27",
+	"Category": "",
+	"Description": "",
+	"Modules": [
+		{
+			"Name": "UE_CPP",
+			"Type": "Runtime",
+			"LoadingPhase": "Default",
+			"AdditionalDependencies": [
+				"Engine"
+			]
+		}
+	]
+}
+```
+
+1.   UE会根据`.uproject`文件，为项目生成必要的文件，并根据UE编辑器的设置启动它
+     1.   `Modules`：游戏模块对象的数组
+
+## 14.4	预编译头
+
+1.   在实际情况中，我们可以省略大部分头文件，如
+
+     ```c++
+     #include "Components/InputComponent.h"
+     #include "Components/StaticMeshComponent.h"
+     #include "Engine/Engine.h"
+     #include "Engine/World.h"
+     #include "Materials/MaterialInstanceDynamic.h"
+     #include "TimerManager.h"
+     ```
+
+2.   重新构建项目，发现仍能正常编译，这是因为有预编译头的存在
+
+     1.   预编译头的思路：预先处理一组文件，然后只替换完成的文本
+
+     2.   在编译时，相当于往每个CPP中隐式添加了PCH头文件
+
+     3.   在我们的项目中，负责预编译头的设置为`PCHUsage`
+
+     4.   默认情况下，有一个值可以显式连接共享的PCH文件
+
+          1.   在`Engine.Build.cs`中，我们可以看到，PCH头文件的位置为`"Public/EngineSharedPCH.h"`
+          2.   在该文件中，是一系列预先`#include`的文件
+
+     5.   可以通过下列代码取消使用预编译头
+
+          ```c++
+          PCHUsage = PCHUsageMode.NoPCHs;
+          ```
+
+## 14.5	UE_CPP.Target.cs & UE_CPPEditor.Target.cs
+
+```c#
+using UnrealBuildTool;
+using System.Collections.Generic;
+
+public class UE_CPPTarget : TargetRules{
+	public UE_CPPTarget( TargetInfo Target) : base(Target){
+		Type = TargetType.Game;
+		DefaultBuildSettings = BuildSettingsVersion.V2;
+		ExtraModuleNames.AddRange( new string[] { "UE_CPP" } );
+	}
+}
+```
+
+```c#
+using UnrealBuildTool;
+using System.Collections.Generic;
+
+public class UE_CPPEditorTarget : TargetRules{
+	public UE_CPPEditorTarget( TargetInfo Target) : base(Target){
+		Type = TargetType.Editor;
+		DefaultBuildSettings = BuildSettingsVersion.V2;
+		ExtraModuleNames.AddRange( new string[] { "UE_CPP" } );
+	}
+}
+```
+
+1.   根据指定程序集的其它设置，运行我们的项目
+     1.   如果要在编辑器下运行游戏，则使用`Type = TargetType.Editor`
+     2.   如果要构建独立游戏，则使用`Type = TargetType.Game`
+     3.   如果要将游戏构建为专用服务器，则需要手动将`UE_CPP.ServerTarget.cs`添加到项目中，并使用`Type = TargetType.Server`
+2.   打开`项目文件夹\Binaries\Win64 `，可以发现，在编辑器启动时，我们的代码将被收集到一个特殊的`UE4Editor-UE_CPP.dll`文件中
+3.   在`UE_4.27\Engine\Binaries\Win64`中，我们可以看到，UE已经为每个模块创建了一个带有`TargetEditor`的特殊`.dll`文件，也就是说，当我们从epic中下载UE时，我们将预编译模块以二进制`.dll`文件的形式，复制到我们的磁盘中，并且当我们要从源代码进行UE编译时，模块的编译和`.dll`文件的创建将在本地计算机上进行
+
+## 14.6	UE的宏和代码生成
+
+1.   UE实现了自己的反射系统：一个程序，在执行过程中跟踪和修改其自身的结构和行为
+2.   借助该系统，我们可以
+     1.   获得有关类型的信息，按名称调用函数，获取枚举元素的名称
+     2.   创建一个迭代器，该迭代器将遍历结构的所有字段并获取一些信息
+     3.   将指针传递给要创建其对象的类，如`DefaultPawnClass = ASandBoxPawn::StaticClass()`
+3.   该系统大大加快了开发过程，如：
+     1.   将所有属性输出到接口，C++和蓝图代码的通信，对象的序列化
+     2.   在场景中创建多个actor，更改一些属性，然后关闭UE，重新打开时，所有属性值均已保存到磁盘，然后从磁盘读取
+     3.   垃圾收集器也基于此系统工作
+4.   当我们在UE中创建一个类时
+     1.   在`UE_4.27\Engine\Content\Editor\Templates`中，包含UE所有主要类的模板
+     2.   UE将根据这些模板，替换其中的变量，生成默认的模板
+5.   当运行项目构建时
+     1.   首先会解析头文件
+     2.   然后运行`UnrealHeaderTool`程序，这是一个特殊的`parser-generator`，用于处理源代码中的所有宏
+          1.   `generator`首先会扫描所有头文件，并且在其中查找带有后缀`generated.h`的头文件
+               1.   该头文件是UE工具的标记，它可以理解为该头文件需要处理，也就是包含特定的UE类型
+               2.   如果找不到此头文件，则`generator`会直接忽略它
+          2.   之后，`generator`会遍历所有的`UENUM, USTRUCT, UCLASS, UPROPERTY, UFUNCTION`，并生成UE反射系统所需要的其他代码
+               1.   有些生成代码在`.generated.h`头文件中
+               2.   在该文件的所在目录中，我们可以看到UE根据我们的代码为我们生成的实际文件
+          3.   在class的后面，还会有一个特殊的宏`UE_CPP_API`
+               1.   `UE_CPP_API`对应的是`DLLEXPORT`宏，在不同平台有不同含义
+               2.   windows中表示`__declspec(dllexport)`
+               3.   这意味着可以从`.dll`文件中导出我们的类
+
+## 14.7	删除临时文件
+
+1.   删除临时文件后，项目剩下如下内容
+
+     <img src="AssetMarkdown/image-20230123220811777.png" alt="image-20230123220811777" style="zoom:80%;" />
+
+2.   首先，我们右击`.uproject`文件，`Generate Visual Studio project files`，生成VS工程
+
+3.   点击生成的`.sln`文件，进入VS工程
+
+4.   有时会出现VS不知道哪个项目正在启动，我们只需要`右击目标项目 => 设为启动项目`即可
+
+# 十五、垃圾收集器garbage collector
+
+1.   这是一个定期清除内存的特殊过程
+
+2.   当一个actor或component被销毁时，所有指向待删除对象并在反射系统中UE可见的指针(即`UPROPERTY`)都将自动无效，但其指针不为`null`
+
+     1.   判断指针是否无效：`IsValid`
+     2.   未被添加`UPROPERTY`的属性，在指向的对象被删除时，其`IsValid`仍为`true`，因为垃圾回收器并没有被触发，这种指针被称为悬空指针
+
+3.   在`项目设置 => 垃圾回收`中，可以进行相应的设置
+
+     
