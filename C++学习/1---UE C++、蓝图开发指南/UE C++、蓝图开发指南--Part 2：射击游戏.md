@@ -1,0 +1,337 @@
+# 目录
+
+[TOC]
+
+# 一、创建项目，添加内容
+
+1.   创建蓝图项目`ShootThemUp`
+2.   增加版权
+     1.   在`编辑 => 项目设置 => 描述 => 法律 => 版权声明`中，声明版权
+     2.   此时填写为`Shoot Them Up Game, All Rights Reserved`
+3.   新建文件夹`Levels`，用于存放地图
+     1.   将默认地图保存为`TestLevel`
+     2.   在`项目设置 => 地图和模式`中，将`TestLevel`设置为默认地图
+4.   添加项目内容
+     1.   点击`Epic Games => 虚幻引擎 => 示例 => 射击游戏`，创建一个工程
+     2.   选择`内容 => Animations => TTP_Animations`中的内容，迁移到我们的项目的`Content`文件夹
+     3.   新建文件夹`ExternalContent`，将迁移过来的内容放置在其中，然后将其标记为红色
+5.   创建C++类`STUGameModeBase`，继承于`游戏模式基础`，类型为`公共`
+6.   在`世界场景设置 => 游戏模式重载`中，将其设置为`STUGameModeBase`
+
+# 二、编码标准，clang-format，gitignore
+
+1.   显示行号：在`VS => 工具 => 选项 => 文本编辑器 => 所有语言`中，勾选`行号`
+
+2.   显示空格：在`VS => 编辑 => 高级 => 显示空白`，也可以使用快捷键`CTRL + R, CTRL + W`
+
+3.   格式化代码：`.clang-format`文件
+
+     1.   这是一个特殊的文件，在其中设置了格式化代码的规则
+     2.   将此文件添加到项目中，进行配置，然后我们所有的代码文件都将以相同的样式设置格式
+     3.   通常，它在项目开始时配置一次，然后自动进行所有格式化
+     4.   在`工程目录`中，新建`.clang-format`文件，然后重新生成VS工程
+     5.   在`VS => 工具 => 选项 => 文本编辑器 => C/C++ => 代码样式 => 格式设置`中，勾选`启用ClangFormat支持`
+     6.   使用快捷键`CTRL + K, CTRL + D`，即可快速格式化代码
+
+4.   `.clang-format`文件的编写
+
+     1.   `Language`：声明当前文件针对的语言类型
+     2.   `BasedOnStyle`：基础格式，如：`Microsoft`、`Google`
+     3.   `IndentWidth`：缩进包含的空格数
+     4.   `UseTab`：是否使用tab缩进，如：`Never`、`Always`
+     5.   `TabWidth`：tab的宽度
+     6.   `BreakBeforeBraces`：大括号前是否需要换行，如：`Attach`、`Allman`
+
+     ```yaml
+     Language: Cpp
+     BasedOnStyle: Microsoft
+     IndentWidth: '4'
+     UseTab: Never
+     TabWidth: '4'
+     BreakBeforeBraces: Allman
+     ColumnLimit: '140'
+     AccessModifierOffset: '-4'
+     SortIncludes: false
+     AllowShortBlocksOnASingleLine: false
+     AlignAfterOpenBracket: DontAlign
+     AllowShortFunctionsOnASingleLine: Inline
+     PointerAlignment: Left
+     AllowShortIfStatementsOnASingleLine: true
+     SpacesBeforeTrailingComments: 2
+     AllowShortCaseLabelsOnASingleLine: true
+     IndentCaseLabels: true
+     AlwaysBreakTemplateDeclarations: Yes
+     ```
+
+5.   `.gitignore`文件编写
+
+     ```tex
+     .vs
+     *.sln
+     DerivedDataCache/
+     Intermediate/
+     Saved/
+     Binaries/
+     Build/
+     ```
+
+6.   资源文件的命名格式：https://github.com/Allar/ue5-style-guide
+
+# 三、创建 ACharacter 和 APlayerController 类
+
+1.   新建C++类`STUBaseCharacter`，继承于`角色`
+
+     1.   目录：`ShootThemUp/Source/ShootThemUp/Public/Player`
+
+2.   新建C++类`STUPlayerController`，继承于`玩家控制器`
+
+     1.   目录：`ShootThemUp/Source/ShootThemUp/Public/Player`
+
+3.   在`ShootThemUp.Build.cs`中，添加目录
+
+     ```c#
+     using UnrealBuildTool;
+     
+     public class ShootThemUp : ModuleRules{
+     	public ShootThemUp(ReadOnlyTargetRules Target) : base(Target)
+     	{
+     		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+     	
+     		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+     
+     		PrivateDependencyModuleNames.AddRange(new string[] {  });
+     
+     		PublicIncludePaths.AddRange(new string[] { "ShootThemUp/Public/Player" });
+     	}
+     }
+     ```
+
+4.   修改`STUGameModeBase`，设置默认Pawn类和玩家控制器类
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUGameModeBase : public AGameModeBase{
+     	GENERATED_BODY()
+     public:
+         ASTUGameModeBase();
+     };
+     ```
+
+     ```c++
+     #include "STUGameModeBase.h"
+     #include "Player/STUBaseCharacter.h"
+     #include "Player/STUPlayerController.h"
+     
+     ASTUGameModeBase::ASTUGameModeBase() {
+         DefaultPawnClass = ASTUBaseCharacter::StaticClass();
+         PlayerControllerClass = ASTUPlayerController::StaticClass();
+     }
+     ```
+
+5.   创建文件夹`Content/Player`，并根据C++类创建蓝图类
+
+6.   将游戏模式重载中的对应类，设置为蓝图类
+
+7.   修改`BP_STUBaseCharacter`，设置角色的默认`Mesh`
+
+8.   修改`STUBaseCharacter`，添加相机组件
+
+     ```c++
+     #pragma once
+     
+     #include "CoreMinimal.h"
+     #include "GameFramework/Character.h"
+     #include "STUBaseCharacter.generated.h"
+     
+     class UCameraComponent;
+     
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+     	...
+             
+     protected:
+         // 相机
+         UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+         UCameraComponent* CameraComponent;
+         
+     	...
+     };
+     ```
+
+     ```c++
+     #include "Player/STUBaseCharacter.h"
+     #include "Camera/CameraComponent.h"
+     
+     ASTUBaseCharacter::ASTUBaseCharacter() {
+         PrimaryActorTick.bCanEverTick = true;
+     
+         // 创建相机组件, 并设置其父组件
+         CameraComponent = CreateDefaultSubobject<UCameraComponent>("CameraComponent");
+         CameraComponent->SetupAttachment(GetRootComponent());
+     }
+     ```
+
+9.   修改`BP_STUBaseCharacter`，设置相机组件的位置为`(-250,0,70)`
+
+# 四、基本角色移动
+
+1.   修改`项目设置 => 输入`，添加轴映射
+
+     <img src="AssetMarkdown/image-20230124122524931.png" alt="image-20230124122524931" style="zoom:80%;" />
+
+2.   修改`STUBaseCharacter`，添加回调函数
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+        	...
+     private:
+         // WS控制角色前后移动
+         void MoveForward(float Amount);
+         // AD控制角色左右移动
+         void MoveRight(float Amount);
+     };
+     ```
+
+     ```c++
+     DEFINE_LOG_CATEGORY_STATIC(LogSTUBaseCharacter, All, All);
+     
+     void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+         Super::SetupPlayerInputComponent(PlayerInputComponent);
+     
+         // WASD控制角色移动
+         PlayerInputComponent->BindAxis("MoveForward", this, &ASTUBaseCharacter::MoveForward);
+         PlayerInputComponent->BindAxis("MoveRight", this, &ASTUBaseCharacter::MoveRight);
+     }
+     
+     // WS控制角色前后移动
+     void ASTUBaseCharacter::MoveForward(float Amount) {
+         AddMovementInput(GetActorForwardVector(), Amount);
+     }
+     
+     // AD控制角色左右移动
+     void ASTUBaseCharacter::MoveRight(float Amount) {
+         AddMovementInput(GetActorRightVector(), Amount);
+     }
+     ```
+
+# 五、角色相机控制
+
+1.   修改`项目设置 => 输入`，添加轴映射
+
+     <img src="AssetMarkdown/image-20230124125109840.png" alt="image-20230124125109840" style="zoom:80%;" />
+
+2.   修改`STUBaseCharacter`，添加回调函数
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+        	...
+     private:
+         // 鼠标上下移动, 控制相机上下移动
+         void LookUp(float Amount);
+         // 鼠标左右移动, 控制相机左右移动
+         void TurnAround(float Amount);
+     };
+     ```
+
+     ```c++
+     void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+         Super::SetupPlayerInputComponent(PlayerInputComponent);
+     
+         // WASD控制角色移动
+         PlayerInputComponent->BindAxis("MoveForward", this, &ASTUBaseCharacter::MoveForward);
+         PlayerInputComponent->BindAxis("MoveRight", this, &ASTUBaseCharacter::MoveRight);
+         
+         // 鼠标控制相机移动
+         PlayerInputComponent->BindAxis("LookUp", this, &ASTUBaseCharacter::LookUp);
+         PlayerInputComponent->BindAxis("TurnAround", this, &ASTUBaseCharacter::TurnAround);
+     }
+     
+     // 鼠标上下移动, 控制相机上下移动
+     void ASTUBaseCharacter::LookUp(float Amount) {
+         AddControllerPitchInput(Amount);
+     }
+     // 鼠标左右移动, 控制相机左右移动
+     void ASTUBaseCharacter::TurnAround(float Amount) {
+         AddControllerYawInput(Amount);
+     }
+
+3.   修改`BP_STUBaseCharacter`，允许控制器控制相机的上下移动
+
+     1.   勾选`Camera组件 => 细节 => 使用控制器旋转Pitch`
+
+4.   修改`STUBaseCharacter`，添加弹簧臂组件，用弹簧臂控制相机的运动
+
+     ```c++
+     class UCameraComponent;
+     class USpringArmComponent;
+     
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+     	...
+             
+     protected:
+         // 相机的弹簧臂
+         UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+         USpringArmComponent* SpringArmComponent;
+         
+         // 相机
+         UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+         UCameraComponent* CameraComponent;
+         
+         ...
+     }
+     ```
+
+     ```c++
+     #include "Player/STUBaseCharacter.h"
+     #include "Camera/CameraComponent.h"
+     #include "Components/InputComponent.h"
+     #include "GameFramework/SpringArmComponent.h"
+     
+     DEFINE_LOG_CATEGORY_STATIC(LogSTUBaseCharacter, All, All);
+     
+     ASTUBaseCharacter::ASTUBaseCharacter() {
+         PrimaryActorTick.bCanEverTick = true;
+     
+         // 创建弹簧臂组件, 并设置其父组件, 允许pawn控制旋转
+         SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>("SpringArmComponent");
+         SpringArmComponent->SetupAttachment(GetRootComponent());
+         SpringArmComponent->bUsePawnControlRotation = true;
+     
+         // 创建相机组件, 并设置其父组件
+         CameraComponent = CreateDefaultSubobject<UCameraComponent>("CameraComponent");
+         CameraComponent->SetupAttachment(SpringArmComponent);
+     }
+
+5.   右击`BP_STUBaseCharacter`，`资产操作 => 重新加载`
+
+     1.   将相机组件的位置还原为`(0,0,0)`，取消勾选`Camera组件 => 细节 => 使用Pawn控制旋转`
+     2.   使用弹簧臂控制相机的位置：
+
+     <img src="AssetMarkdown/image-20230124130336306.png" alt="image-20230124130336306" style="zoom:80%;" />
+
+6.   添加一个默认动画：
+
+     1.   修改`BP_STUBaseCharacter => 网格体 => 细节 => 动画 `
+
+     <img src="AssetMarkdown/image-20230124131304483.png" alt="image-20230124131304483" style="zoom: 80%;" />
+
+7.   由于`LookUp`函数与`AddControllerPitchInput`均只有一个`float`参数，因此我们可以不创建`LookUp`，而是直接绑定`AddControllerPitchInput`。`TurnAround`函数同理
+
+     ```c++
+     void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+         Super::SetupPlayerInputComponent(PlayerInputComponent);
+     
+         // WASD控制角色移动
+         PlayerInputComponent->BindAxis("MoveForward", this, &ASTUBaseCharacter::MoveForward);
+         PlayerInputComponent->BindAxis("MoveRight", this, &ASTUBaseCharacter::MoveRight);
+         
+         // 鼠标控制相机移动
+         PlayerInputComponent->BindAxis("LookUp", this, &ASTUBaseCharacter::AddControllerPitchInput);
+         PlayerInputComponent->BindAxis("TurnAround", this, &ASTUBaseCharacter::AddControllerYawInput);
+     }
+     ```
+
+# 六、动画蓝图
