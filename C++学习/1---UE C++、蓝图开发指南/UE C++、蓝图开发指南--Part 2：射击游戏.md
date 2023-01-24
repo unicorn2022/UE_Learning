@@ -259,7 +259,7 @@
 
 3.   修改`BP_STUBaseCharacter`，允许控制器控制相机的上下移动
 
-     1.   勾选`Camera组件 => 细节 => 使用控制器旋转Pitch`
+     1.   勾选`Camera组件 => 细节 => 使用Pawn控制旋转`
 
 4.   修改`STUBaseCharacter`，添加弹簧臂组件，用弹簧臂控制相机的运动
 
@@ -310,7 +310,7 @@
      1.   将相机组件的位置还原为`(0,0,0)`，取消勾选`Camera组件 => 细节 => 使用Pawn控制旋转`
      2.   使用弹簧臂控制相机的位置：
 
-     <img src="AssetMarkdown/image-20230124130336306.png" alt="image-20230124130336306" style="zoom:80%;" />
+     <img src="AssetMarkdown/image-20230124214816243.png" alt="image-20230124214816243" style="zoom:80%;" />
 
 6.   添加一个默认动画：
 
@@ -335,3 +335,92 @@
      ```
 
 # 六、动画蓝图
+
+1.   将`Floor`删除，并添加`盒体画刷`
+
+     1.   位置：`(0,0,0)`
+     2.   缩放：`(50,50,1)`
+
+2.   修改`PlayerStart`的位置为：`(0,0,200)`
+
+3.   新建`Player/Animations`文件夹，然后创建`ABP_BaseCharacter`动画蓝图
+
+     1.   **事件图表**：处理各种动画事件，还具有更新功能，实际上时蓝图的`Tick`函数
+     2.   **AnimGraph**：处理所有动画，最终的动画被发送到输出姿势节点，该节点将在当前帧中呈现
+
+4.   修改`BP_STUBaseCharacter`
+
+     1.   将`Mesh => 动画`修改为：使用动画蓝图`ABP_BaseCharacter`
+
+5.   创建混合空间1D`BS_Locomotion`，
+
+     1.   修改水平坐标轴设置：
+          1.   名称：`速度`
+          2.   轴值范围：`0~600`
+     2.   将`Idle`动画与`Run_Fwd`动画根据人物当前运动速度混合
+          1.   将`Idle`动画拖至`0`的位置
+          2.   将`Run_Fwd`动画拖至`600`的位置
+
+     <img src="AssetMarkdown/image-20230124215625248.png" alt="image-20230124215625248" style="zoom:80%;" />
+
+6.   修改动画蓝图`ABP_BaseCharacter`
+
+     <img src="AssetMarkdown/image-20230124220108395.png" alt="image-20230124220108395" style="zoom:80%;" />
+
+     <img src="AssetMarkdown/image-20230124221450908.png" alt="image-20230124221450908" style="zoom:80%;" />
+
+# 七、跳转动画，状态机制
+
+1.   添加操作映射
+
+     <img src="AssetMarkdown/image-20230124220317840.png" alt="image-20230124220317840" style="zoom:80%;" />
+
+2.   修改`STUBaseCharacter`
+
+     1.   `Jump()`是`Character`类的一个函数，调用后，下一个Tick会给当前角色添加一个Z轴的脉冲
+
+     ```c++
+     void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+         Super::SetupPlayerInputComponent(PlayerInputComponent);
+     
+         // WASD控制角色移动
+         PlayerInputComponent->BindAxis("MoveForward", this, &ASTUBaseCharacter::MoveForward);
+         PlayerInputComponent->BindAxis("MoveRight", this, &ASTUBaseCharacter::MoveRight);
+         
+         // 鼠标控制相机移动
+         PlayerInputComponent->BindAxis("LookUp", this, &ASTUBaseCharacter::AddControllerPitchInput);
+         PlayerInputComponent->BindAxis("TurnAround", this, &ASTUBaseCharacter::AddControllerYawInput);
+     
+         // 空格键控制角色跳跃
+         PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ASTUBaseCharacter::Jump);
+     }
+     ```
+
+3.   修改动画蓝图`ABP_BaseCharacter`
+
+     1.   事件图表：判断角色是否在空中
+
+          <img src="AssetMarkdown/image-20230124222317892.png" alt="image-20230124222317892" style="zoom:80%;" />
+
+     2.   AnimGraph：设置不同动画之间切换的状态机
+
+          <img src="AssetMarkdown/image-20230124223844474.png" alt="image-20230124223844474" style="zoom:80%;" />
+
+          <img src="AssetMarkdown/image-20230124223329450.png" alt="image-20230124223329450" style="zoom:80%;" />
+
+          1.   `Walk => JumpStart`：`在空中 == true`
+          2.   `JumpStart => JumpLoop`：`动画剩余时间 < 0.1`
+          3.   `JumpLoop => JumpEnd`：`在空中 == false`
+          4.   `JumpEnd => Walk`：`动画剩余时间 < 0.1`
+
+     3.   将`JumpStart => 细节 => 循环动画`取消勾选，保证`JumpStart`动画只播放一次
+
+     4.   将`JumpLoop => 细节 => 循环动画`勾选，保证`JumpLoop`动画可以循环播放
+
+     5.   将`JumpEnd => 细节 => 循环动画`取消勾选，保证`JumpEnd`动画只播放一次
+
+4.   修改`BP_STUBaseCharacter => 角色移动`
+
+     1.   设置`跳跃Z速度`为`600`
+
+# 八、实战作业：跑步动画
