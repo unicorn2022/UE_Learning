@@ -424,3 +424,189 @@
      1.   设置`跳跃Z速度`为`600`
 
 # 八、实战作业：跑步动画
+
+>   任务：按`Shift + w`跑步前进，按`w`平稳前进
+
+1.   添加操作映射：
+
+     <img src="AssetMarkdown/image-20230125111529275.png" alt="image-20230125111529275" style="zoom:80%;" />
+
+2.   修改`STUBaseCharacter`，添加`左Shift`的回调函数
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+         ...
+     public:
+         // 判断角色是否处于奔跑状态
+         UFUNCTION(BlueprintCallable, Category = "Movement")
+         bool IsRunning() const;
+     
+     private:
+         // WS控制角色前后移动
+         bool IsMovingForward = false;
+         void MoveForward(float Amount);
+         // AD控制角色左右移动
+         void MoveRight(float Amount);
+     
+         // 左Shift控制角色开始跑动
+         bool WantsToRun = false; // 按下Shift只能表示想要跑步, 只有当还按下W时, 才能开始跑步
+         void OnStartRunning();
+         void OnStopRunning();
+     };
+     ```
+
+     ```c++
+     void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+         Super::SetupPlayerInputComponent(PlayerInputComponent);
+     
+         // WASD控制角色移动
+         PlayerInputComponent->BindAxis("MoveForward", this, &ASTUBaseCharacter::MoveForward);
+         PlayerInputComponent->BindAxis("MoveRight", this, &ASTUBaseCharacter::MoveRight);
+         
+         // 鼠标控制相机移动
+         PlayerInputComponent->BindAxis("LookUp", this, &ASTUBaseCharacter::AddControllerPitchInput);
+         PlayerInputComponent->BindAxis("TurnAround", this, &ASTUBaseCharacter::AddControllerYawInput);
+     
+         // 空格键控制角色跳跃
+         PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ASTUBaseCharacter::Jump);
+         
+         // 左Shift控制角色开始跑动 
+         PlayerInputComponent->BindAction("Run", IE_Pressed, this, &ASTUBaseCharacter::OnStartRunning);
+         PlayerInputComponent->BindAction("Run", IE_Released, this, &ASTUBaseCharacter::OnStopRunning);
+     }
+     
+     // 判断角色是否处于奔跑状态
+     bool ASTUBaseCharacter::IsRunning() const {
+         return WantsToRun && IsMovingForward && !GetVelocity().IsZero();
+     }
+     
+     // WS控制角色前后移动
+     void ASTUBaseCharacter::MoveForward(float Amount) {
+         IsMovingForward = Amount > 0.0f;
+         AddMovementInput(GetActorForwardVector(), Amount);
+     }
+     // AD控制角色左右移动
+     void ASTUBaseCharacter::MoveRight(float Amount) {
+         AddMovementInput(GetActorRightVector(), Amount);
+     }
+     
+     // 左Shift控制角色开始跑动
+     void ASTUBaseCharacter::OnStartRunning() {
+         WantsToRun = true;
+     }
+     void ASTUBaseCharacter::OnStopRunning() {
+         WantsToRun = false;
+     }
+     ```
+
+3.   修改动画蓝图`ABP_BaseCharacter`：
+
+     1.   事件图表：
+
+          <img src="AssetMarkdown/image-20230125113721254.png" alt="image-20230125113721254" style="zoom:80%;" />
+
+     2.   状态机：
+
+          1.   `Walk => Run`：`在奔跑 == true`
+          2.   `Run => Walk`：`在奔跑 == false`
+          3.   `Run => JumpStart`：与`Walk => JumpStart`相同，因此将两者的判断条件共享
+               1.   将`Walk => JumpStart`的规则，在`细节 => 过度规则共享`中，点击`提升为共享`，并命名为`IsFalling`
+               2.   将`Run => JumpStart`的规则，在`细节 => 过度规则共享`中，点击`使用共享`，并选择`IsFalling`
+
+          <img src="AssetMarkdown/image-20230125114037665.png" alt="image-20230125114037665" style="zoom:80%;" />
+
+4.   修改角色动画
+
+     1.   将原来的`BS_Locomotion`重命名为`BS_LocomotionWalk`
+     2.   复制一个，并命名为`BS_LocomotionRun`，将`600`处的动画修改为`RoadieRun_Fwd`
+
+5.   创建C++类`STUCharacterMovementComponent`，继承于`CharacterMovementComponent`，负责修改角色的最大速度
+
+     1.   目录为：`ShootThemUp/Source/ShootThemUp/Public/Components`
+
+6.   修改`ShootThemUp.Build.cs`，将新的目录添加进去
+
+     ```c#
+     PublicIncludePaths.AddRange(new string[] { "ShootThemUp/Public/Player", "ShootThemUp/Public/Components" });
+     ```
+
+7.   修改`STUCharacterMovementComponent`
+
+     ```c++
+     #pragma once
+     
+     #include "CoreMinimal.h"
+     #include "GameFramework/CharacterMovementComponent.h"
+     #include "STUCharacterMovementComponent.generated.h"
+     
+     UCLASS()
+     class SHOOTTHEMUP_API USTUCharacterMovementComponent : public UCharacterMovementComponent
+     {
+     	GENERATED_BODY()
+     public:
+         // 通过meta设置值的范围
+         UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Movement", meta = (ClampMin = "1.5", ClampMax = "10.0"))
+         float RunModifier = 2.0f;
+     
+         virtual float GetMaxSpeed() const override;
+     };
+     ```
+
+     ```c++
+     #include "Components/STUCharacterMovementComponent.h"
+     #include "Player/STUBaseCharacter.h"
+     
+     float USTUCharacterMovementComponent::GetMaxSpeed() const {
+         float MaxSpeed = Super::GetMaxSpeed();
+         const ASTUBaseCharacter* Player = Cast<ASTUBaseCharacter>(GetPawnOwner());
+         
+         // 如果角色在跑步, 则最大速度要变大RunModifier倍
+         if (Player && Player->IsRunning()) MaxSpeed *= RunModifier;
+         return MaxSpeed;
+     }
+     ```
+
+8.   修改`STUBaseCharacter`的构造函数
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+         
+     public:
+         // 由于CharacterMovementComponent组件是默认组件, 因此我们需要通过参数显式指定
+         ASTUBaseCharacter(const FObjectInitializer& ObjInit);
+         ...
+     }
+     ```
+
+     ```c++
+     #include "Player/STUBaseCharacter.h"
+     #include "Camera/CameraComponent.h"
+     #include "Components/InputComponent.h"
+     #include "GameFramework/SpringArmComponent.h"
+     #include "Components/STUCharacterMovementComponent.h"
+     
+     DEFINE_LOG_CATEGORY_STATIC(LogSTUBaseCharacter, All, All);
+     
+     // 由于CharacterMovementComponent组件是默认组件, 因此我们需要通过参数显式指定
+     // 在调用父类的构造函数时, 显式指定CharacterMovementComponentName使用自定义的USTUCharacterMovementComponent
+     ASTUBaseCharacter::ASTUBaseCharacter(const FObjectInitializer& ObjInit) 
+         : Super(ObjInit.SetDefaultSubobjectClass<USTUCharacterMovementComponent>(ACharacter::CharacterMovementComponentName)) {
+         PrimaryActorTick.bCanEverTick = true;
+     
+         // 创建弹簧臂组件, 并设置其父组件, 允许pawn控制旋转
+         SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>("SpringArmComponent");
+         SpringArmComponent->SetupAttachment(GetRootComponent());
+         SpringArmComponent->bUsePawnControlRotation = true;
+     
+         // 创建相机组件, 并设置其父组件
+         CameraComponent = CreateDefaultSubobject<UCameraComponent>("CameraComponent");
+         CameraComponent->SetupAttachment(SpringArmComponent);
+     }
+
+9.   在角色蓝图`BP_STUBaseCharacter`中，我们可以看到，其`角色移动组件`继承于`STUCharacterMovementComponent`
+
+     1.   选中`角色运动组件`，可以修改`RunModifier`的值
+
+# 九、前后左右的运动动画
