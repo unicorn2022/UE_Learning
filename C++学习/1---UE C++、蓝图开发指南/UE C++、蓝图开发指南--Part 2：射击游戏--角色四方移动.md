@@ -684,3 +684,9 @@
      <img src="AssetMarkdown/image-20230125211842558.png" alt="image-20230125211842558" style="zoom:80%;" />
 
 5.   将原来的`BS_LocomotionWalk`删除，将刚才创建的`BS_LocomotionWalk2`重命名为`BS_LocomotionWalk`
+
+# 十、组装游戏
+
+1.   点击`文件 => 打包项目 => 编译配置`，选择`发行`
+2.   点击`文件 => 打包项目 => Windows(64-bit)`，将文件打包到`ShootThemUp\Build`目录下
+3.   然后，即可在`ShootThemUp\Build`中，得到打包后的游戏
