@@ -610,3 +610,77 @@
      1.   选中`角色运动组件`，可以修改`RunModifier`的值
 
 # 九、前后左右的运动动画
+
+1.   创建混合空间`BS_LocomotionWalk2`
+
+     1.   水平轴：速度，`0~600`
+     2.   垂直轴：方向，`-180~180`
+     3.   将动画拖入坐标轴
+
+     <img src="AssetMarkdown/image-20230125203232911.png" alt="image-20230125203232911" style="zoom:80%;" />
+
+2.   修改动画蓝图`ABP_BaseCharacter`
+
+     1.   状态机：修改`Walk`状态的动画
+
+          <img src="AssetMarkdown/image-20230125203444396.png" alt="image-20230125203444396" style="zoom:80%;" />
+
+     2.   事件图表：绘制角色的向前向量
+
+          <img src="AssetMarkdown/image-20230125204119285.png" alt="image-20230125204119285" style="zoom:80%;" />
+
+     3.   事件图表：获取速度的角度值
+
+          <img src="AssetMarkdown/image-20230125205612233.png" alt="image-20230125205612233" style="zoom:80%;" />
+
+     4.   事件图表：判断游戏是否处于执行状态
+
+          1.   由于动画蓝图会被UE编辑器、游戏程序两者调用，因此在执行事件图表中的逻辑时，要提前判断一下`CharacterPawn`是否为`Valid`
+
+          <img src="AssetMarkdown/image-20230125211106744.png" alt="image-20230125211106744" style="zoom:80%;" />
+
+3.   修改`STUBaseCharacter`：获取角色速度的角度值
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+         ...
+     public:
+         // 获取角色移动的方向
+         UFUNCTION(BlueprintCallable, Category = "Movement")
+         float GetMovementDirection() const;
+         ...
+     }
+     ```
+
+     ```c++
+     // 获取角色移动的方向
+     float ASTUBaseCharacter::GetMovementDirection() const {
+         // 特判: 速度为0
+         if (GetVelocity().IsZero()) return 0.0f;
+     
+         const FVector VelocityDirection = GetVelocity().GetSafeNormal();
+         const FVector ForwardDirection = GetActorForwardVector();
+         
+         // 通过点乘, 获得具体的角度值
+         float angle = FMath::Acos(FVector::DotProduct(ForwardDirection, VelocityDirection));
+         angle = FMath::RadiansToDegrees(angle);
+         
+         // 通过叉乘结果的Z值, 判断是处于顺时针还是逆时针方向
+         const FVector CrossProduct = FVector::CrossProduct(ForwardDirection, VelocityDirection);
+         
+         // 特判: 速度与角色运动方向重合/相反
+         if (CrossProduct.IsZero()) return angle;
+     
+         angle *= FMath::Sign(CrossProduct.Z);
+         return angle;
+     }
+     ```
+
+4.   修改动画蓝图`ABP_BaseCharacter`
+
+     1.   事件图表：获取角色运动的方向
+
+     <img src="AssetMarkdown/image-20230125211842558.png" alt="image-20230125211842558" style="zoom:80%;" />
+
+5.   将原来的`BS_LocomotionWalk`删除，将刚才创建的`BS_LocomotionWalk2`重命名为`BS_LocomotionWalk`
