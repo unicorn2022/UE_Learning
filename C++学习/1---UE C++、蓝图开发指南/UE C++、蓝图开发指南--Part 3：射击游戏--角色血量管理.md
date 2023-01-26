@@ -131,3 +131,73 @@
      2.   水平对齐：`居中`
      3.   垂直对齐：`文本中心`
      4.   颜色：`#006558`
+
+# 二、伤害机制
+
+1.   使用函数`TakeDamage`，广播角色受到伤害的事件
+
+     ```c++
+     // 角色被击中, 参数如下:
+     // (1) float Damage:                    造成的伤害值
+     // (2) FDamageEvent& DamageEvent:       伤害事件, 可以包含伤害的类型
+     // (3) AController* EventInstigator:    受到伤害的角色的控制器
+     // (4) AActor* DamageCauser:            造成伤害的Actor
+     TakeDamage(0.1f, FDamageEvent{}, Controller, this);
+     ```
+
+     1.   `FDamageEvent`：角色受伤事件类
+          1.   `UDamageType`：角色受伤的类型
+          2.   根据此信息，角色可以发出适当的声音效果，或者播放特殊的动画，如角色的燃烧动画
+     2.   `FPointDamageEvent`：角色受到点伤害事件类(如子弹)，继承于`FDamageEvent`
+          1.   可以传输：受到的伤害在身体的哪个部位、哪个方向
+          2.   根据这些参数，我们可以物理上正确地播放角色骨骼的动画
+     3.   `FRadialDamageEvent`：角色受到范围伤害事件类(如手榴弹爆炸)，继承于`FDamageEvent`
+          1.   可以传输：球体在空间中的位置、半径、如何计算角色的最终伤害
+
+2.   在`Health`组件中，自定义`OnTakeAnyDamageHandle`，实现对应的回调函数
+
+     1.   `DamagedActor`：被伤害的actor
+     2.   `Damage`：伤害的数值
+     3.   `DamageType`：伤害的类型
+     4.   `InstigatedBy`：受到伤害的角色的控制器
+     5.   `DamageCauser`：造成伤害的actor
+
+     ```c++
+     UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
+     class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent{
+         ...
+             
+     private:
+         // 角色受到伤害的回调函数
+         UFUNCTION()
+         void OnTakeAnyDamageHandler(
+             AActor* DamagedActor, float Damage, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser);
+     };
+     
+     ```
+
+     ```c++
+     #include "Components/STUHealthComponent.h"
+     #include "GameFramework/Actor.h"
+     
+     DEFINE_LOG_CATEGORY_STATIC(LogSTUHealthComponent, All, All);
+     
+     void USTUHealthComponent::BeginPlay() {
+         Super::BeginPlay();
+         
+         Health = MaxHealth;
+     
+         // 订阅OnTakeAnyDamage事件
+         AActor* ComponentOwner = GetOwner();
+         if (ComponentOwner) {
+             ComponentOwner->OnTakeAnyDamage.AddDynamic(this, &USTUHealthComponent::OnTakeAnyDamageHandler);
+         }
+     }
+     
+     // 角色受到伤害的回调函数
+     void USTUHealthComponent::OnTakeAnyDamageHandler(
+         AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser) {
+         Health -= Damage;
+     }
+
+3.   
