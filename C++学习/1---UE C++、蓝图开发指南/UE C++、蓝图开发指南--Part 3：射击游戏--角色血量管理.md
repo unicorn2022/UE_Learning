@@ -200,4 +200,97 @@
          Health -= Damage;
      }
 
-3.   
+# 三、角色伤害叠加机制
+
+>   创建一个会伤害角色的Actor，该伤害为径相伤害，模拟手榴弹爆炸的伤害
+
+1.   新建C++类`STUDevDamageActor`，继承于`Actor`
+
+     1.   目录：`ShootThemUp/Source/ShootThemUp/Public/Dev`
+
+2.   在`ShootThemUp.Build.cs`中，添加新目录
+
+     ```c#
+     PublicIncludePaths.AddRange(new string[] { 
+         "ShootThemUp/Public/Player", 
+         "ShootThemUp/Public/Components", 
+         "ShootThemUp/Public/Dev" 
+     });
+
+3.   使用`UGameplayStatics::ApplyRadialDamage()`造成范围伤害
+
+     1.   首先，发现所有与我们的传递参数重叠的参与者
+     2.   然后，遍历所有找到的actor，并在每个actor上调用`TakeDamage`函数
+
+4.   修改`STUDevDamageActor`
+
+     ```c++
+     #pragma once
+     
+     #include "CoreMinimal.h"
+     #include "GameFramework/Actor.h"
+     #include "STUDevDamageActor.generated.h"
+     
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUDevDamageActor : public AActor{
+     	GENERATED_BODY()
+     	
+     public:	
+     	ASTUDevDamageActor();
+     
+     	// 添加场景组件, 使其具有变换效果, 并且在场景中能够移动
+         UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+         USceneComponent* SceneComponent;
+     
+     	// 绘制该Actor的影响范围的参数
+         UPROPERTY(EditAnywhere, BlueprintReadWrite)
+         float Radius = 300.0f;
+         UPROPERTY(EditAnywhere, BlueprintReadWrite)
+         FColor SphereColor = FColor::Red;
+     
+     	// 该Actor造成伤害的参数
+         UPROPERTY(EditAnywhere, BlueprintReadWrite)
+         float Damage = 10.0f;
+         // DoFullDamage: 为true时, 对整个球体内的角色造成等量伤害; 为false时, 离球心越远, 角色收到的伤害越少
+         UPROPERTY(EditAnywhere, BlueprintReadWrite)
+         bool DoFullDamage = false;
+     
+     protected:
+     	virtual void BeginPlay() override;
+     
+     public:
+     	virtual void Tick(float DeltaTime) override;
+     };
+     ```
+
+     ```c++
+     #include "Dev/STUDevDamageActor.h"
+     #include "DrawDebugHelpers.h"
+     #include "Kismet/GameplayStatics.h"
+     
+     DEFINE_LOG_CATEGORY_STATIC(LogSTUDevDamageActor, All, All);
+     
+     ASTUDevDamageActor::ASTUDevDamageActor() {
+         // 允许每一帧调用Tick()
+         PrimaryActorTick.bCanEverTick = true;
+     
+         // 添加场景组件, 并将其设置为根组件
+         SceneComponent = CreateDefaultSubobject<USceneComponent>("SceneComponent");
+         SetRootComponent(SceneComponent);
+     }
+     
+     void ASTUDevDamageActor::BeginPlay() {
+         Super::BeginPlay();
+     }
+     
+     void ASTUDevDamageActor::Tick(float DeltaTime) {
+         Super::Tick(DeltaTime);
+     
+         // 绘制一个球体, 显示当前Actor的影响范围
+         DrawDebugSphere(GetWorld(), GetActorLocation(), Radius, 24, SphereColor);
+     
+         // 造成球状范围伤害
+         UGameplayStatics::ApplyRadialDamage(GetWorld(), Damage, GetActorLocation(), Radius, nullptr, {}, this, nullptr, DoFullDamage);
+     }
+
+5.   
