@@ -293,4 +293,58 @@
          UGameplayStatics::ApplyRadialDamage(GetWorld(), Damage, GetActorLocation(), Radius, nullptr, {}, this, nullptr, DoFullDamage);
      }
 
-5.   
+# 四、伤害类型
+
+1.   新建C++类`STUFireDamageType`，继承于`DamageType`
+
+     1.   目录：`ShootThemUp/Source/ShootThemUp/Public/Dev`
+
+2.   新建C++类`STUIceDamageType`，继承于`DamageType`
+
+     1.   目录：`ShootThemUp/Source/ShootThemUp/Public/Dev`
+
+3.   修改`STUDevDamageActor`：造成伤害时传递伤害类型
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUDevDamageActor : public AActor{
+     	...	
+     public:	
+         // 伤害的类型
+         UPROPERTY(EditAnywhere, BlueprintReadWrite)
+         TSubclassOf<UDamageType> DamageType;
+     }
+     ```
+
+     ```c++
+     void ASTUDevDamageActor::Tick(float DeltaTime) {
+         Super::Tick(DeltaTime);
+     
+         // 绘制一个球体, 显示当前Actor的影响范围
+         DrawDebugSphere(GetWorld(), GetActorLocation(), Radius, 24, SphereColor);
+     
+         // 造成球状范围伤害
+         UGameplayStatics::ApplyRadialDamage(GetWorld(), Damage, GetActorLocation(), Radius, DamageType, {}, this, nullptr, DoFullDamage);
+     }
+     ```
+
+4.   修改`STUHealthComponent`：针对不同类型的伤害，做出不同的响应
+
+     ```c++
+     // 角色受到伤害的回调函数
+     void USTUHealthComponent::OnTakeAnyDamageHandler(
+         AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser) {
+         Health -= Damage;
+         UE_LOG(LogSTUHealthComponent, Display, TEXT("Damage: %f"), Damage);
+     
+         if (DamageType) {
+             if (DamageType->IsA<USTUFireDamageType>()) {
+                 UE_LOG(LogSTUHealthComponent, Display, TEXT("So hot !!!!"));
+             } else if (DamageType->IsA<USTUIceDamageType>()) {
+                 UE_LOG(LogSTUHealthComponent, Display, TEXT("So cold !!!!"));
+             }
+         }
+     }
+     ```
+
+# 五、角色生命值为零时的动画
