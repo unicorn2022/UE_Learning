@@ -43,20 +43,18 @@
      ```c++
      #include "Components/STUHealthComponent.h"
      
-     USTUHealthComponent::USTUHealthComponent()
-     {
+     USTUHealthComponent::USTUHealthComponent(){
      	PrimaryComponentTick.bCanEverTick = false;
      }
      
      
-     void USTUHealthComponent::BeginPlay()
-     {
+     void USTUHealthComponent::BeginPlay(){
          Super::BeginPlay();
          
          Health = MaxHealth;
      }
      ```
-
+     
 3.   修改`STUBaseCharacter`：添加`STUHealthComponent`组件
 
      ```c++
@@ -85,8 +83,7 @@
      #include "Components/TextRenderComponent.h"
      
      ASTUBaseCharacter::ASTUBaseCharacter(const FObjectInitializer& ObjInit) 
-         : Super(ObjInit.SetDefaultSubobjectClass<USTUCharacterMovementComponent>(ACharacter::CharacterMovementComponentName)) 
-     {
+         : Super(ObjInit.SetDefaultSubobjectClass<USTUCharacterMovementComponent>(ACharacter::CharacterMovementComponentName)) {
          // 允许该character每一帧调用Tick()
          PrimaryActorTick.bCanEverTick = true;
      
@@ -124,7 +121,7 @@
          HealthTextComponent->SetText(FText::FromString(HealthString));
      }
      ```
-
+     
 4.   修改角色蓝图`BP_STUBaseCharacter`：更改`HealthTextComponent`组件的属性
 
      1.   旋转：`(0,0,180)`
@@ -154,7 +151,7 @@
      3.   `FRadialDamageEvent`：角色受到范围伤害事件类(如手榴弹爆炸)，继承于`FDamageEvent`
           1.   可以传输：球体在空间中的位置、半径、如何计算角色的最终伤害
 
-2.   在`Health`组件中，自定义`OnTakeAnyDamageHandle`，实现对应的回调函数
+2.   修改`USTUHealthComponent`：自定义`OnTakeAnyDamageHandle`，订阅`OnTakeAnyDamage`事件
 
      1.   `DamagedActor`：被伤害的actor
      2.   `Damage`：伤害的数值
@@ -222,7 +219,7 @@
      1.   首先，发现所有与我们的传递参数重叠的参与者
      2.   然后，遍历所有找到的actor，并在每个actor上调用`TakeDamage`函数
 
-4.   修改`STUDevDamageActor`
+4.   修改`STUDevDamageActor`：该`actor`造成球状范围伤害
 
      ```c++
      #pragma once
@@ -295,6 +292,8 @@
 
 # 四、伤害类型
 
+>   将伤害区分为`Fire`和`Ice`
+
 1.   新建C++类`STUFireDamageType`，继承于`DamageType`
 
      1.   目录：`ShootThemUp/Source/ShootThemUp/Public/Dev`
@@ -348,3 +347,213 @@
      ```
 
 # 五、角色生命值为零时的动画
+
+>   角色生命值为0时，播放死亡动画
+
+1.   修改`STUHealthComponent`：判断角色是否死亡，并广播委托
+
+     ```c++
+     // 声明FOnDeath委托
+     DECLARE_MULTICAST_DELEGATE(FOnDeath);
+     
+     UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
+     class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent{
+     	...
+     public:	
+     	// 判断角色是否死亡
+         UFUNCTION(BlueprintCallable)
+         bool IsDead() const { return Health <= 0.0f; }
+     
+         // 角色死亡委托
+         FOnDeath OnDeath;
+         ...
+     };
+     ```
+
+     ```c++
+     // 角色受到伤害的回调函数
+     void USTUHealthComponent::OnTakeAnyDamageHandler(
+         AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser) {
+         if (Damage <= 0.0f || IsDead()) return;
+     
+         // 保证Health在合理的范围内
+         Health = FMath::Clamp(Health - Damage, 0.0f, MaxHealth);
+     
+         // 角色死亡后, 广播OnDeath委托
+         if (IsDead()) OnDeath.Broadcast();
+     }
+
+2.   修改`STUBaseCharacter`，订阅`OnDeath`委托
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+     	...
+     private:
+         // 角色死亡回调函数
+         void OnDeath();
+     };
+     ```
+
+     ```c++
+     void ASTUBaseCharacter::BeginPlay() {
+         Super::BeginPlay();
+     
+         // 检查组件是否成功创建(仅开发阶段可用)
+         check(HealthComponent);
+         check(HealthTextComponent);
+     
+         // 订阅OnDeath委托
+         HealthComponent->OnDeath.AddUObject(this, &ASTUBaseCharacter::OnDeath);
+     }
+     // 角色死亡回调函数
+     void ASTUBaseCharacter::OnDeath() {
+         UE_LOG(LogSTUBaseCharacter, Warning, TEXT("Player %s is dead"), *GetName());
+     }
+     ```
+
+3.   基于`Death`动画创建动画蒙太奇`AM_Death`
+
+     1.   该资产用于绑定多个动画，我们可以添加多个动画到时间线队列中
+     2.   我们可以直接从代码/蓝图中播放该动画，不需要通过`AnimGraph`
+
+4.   修改`STUBaseCharacter`：角色死亡时调用死亡动画蒙太奇
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+     	...
+     protected:
+         // 死亡动画蒙太奇
+         UPROPERTY(EditDefaultsOnly, Category = "Animation")
+         UAnimMontage* DeathAnimMontage;
+     };
+     ```
+
+     ```c++
+     // 角色死亡回调函数
+     void ASTUBaseCharacter::OnDeath() {
+         UE_LOG(LogSTUBaseCharacter, Warning, TEXT("Player %s is dead"), *GetName());
+         // 播放死亡动画蒙太奇
+         PlayAnimMontage(DeathAnimMontage);
+     }
+
+5.   修改动画蓝图`ABP_BaseCharacter`：添加插槽
+
+     1.   插槽的工作方式为：
+
+          1.   如果没有播放动画蒙太奇，则输出从源中获取的姿势；
+          2.   如果播放了动画蒙太奇，则使出从源中获取的姿势与蒙太奇动画插值的结果
+
+          <img src="AssetMarkdown/image-20230127150717093.png" alt="image-20230127150717093" style="zoom:80%;" />
+
+     2.   注意插槽的名称要与动画蒙太奇中的插槽名称相同
+
+          | ![image-20230127150840816](AssetMarkdown/image-20230127150840816.png) | <img src="AssetMarkdown/image-20230127150808890.png" alt="image-20230127150808890" style="zoom:80%;" /> |
+          | :----------------------------------------------------------: | :----------------------------------------------------------: |
+
+     3.   此时，死亡动画会正常播放，但播放完成后会自动转化成其它动画
+
+6.   修改动画蒙太奇`AM_Death`
+
+     1.   将`资产详情 => 混合选项 => 启用自动混出`取消勾选
+     2.   此时，死亡动画会正常播放，播放完成后，角色姿势不再改变
+
+7.   修改`STUBaseCharacter`：修改死亡回调函数，自动摧毁角色
+
+     ```c++
+     // 角色死亡回调函数
+     void ASTUBaseCharacter::OnDeath() {
+         UE_LOG(LogSTUBaseCharacter, Warning, TEXT("Player %s is dead"), *GetName());
+         // 播放死亡动画蒙太奇
+         PlayAnimMontage(DeathAnimMontage);
+         // 禁止角色的移动
+         GetCharacterMovement()->DisableMovement();
+         // 5s后摧毁角色
+         SetLifeSpan(5.0f);
+     }
+     ```
+
+8.   修改`STUHealthComponent`：增加角色血量变化委托
+
+     ```c++
+     // 声明FOnHealthChanged委托
+     DECLARE_MULTICAST_DELEGATE_OneParam(FOnHealthChanged, float);
+     
+     UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
+     class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent{
+         ...
+     public:	
+         // 角色血量变化委托
+         FOnHealthChanged OnHealthChanged;
+     }
+     ```
+
+     ```c++
+     void USTUHealthComponent::BeginPlay() {
+         Super::BeginPlay();
+     
+         Health = MaxHealth;
+         // 广播OnHealthChanged委托
+         OnHealthChanged.Broadcast(Health);
+     
+         // 订阅OnTakeAnyDamage事件
+         AActor* ComponentOwner = GetOwner();
+         if (ComponentOwner) {
+             UE_LOG(LogSTUHealthComponent, Warning, TEXT("订阅OnTakeAnyDamage事件"));
+             ComponentOwner->OnTakeAnyDamage.AddDynamic(this, &USTUHealthComponent::OnTakeAnyDamageHandler);
+         }
+     }
+     
+     // 角色受到伤害的回调函数
+     void USTUHealthComponent::OnTakeAnyDamageHandler(
+         AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser) {
+         if (Damage <= 0.0f || IsDead()) return;
+     
+         // 保证Health在合理的范围内
+         Health = FMath::Clamp(Health - Damage, 0.0f, MaxHealth);
+         // 广播OnHealthChanged委托
+         OnHealthChanged.Broadcast(Health);
+     
+         // 角色死亡后, 广播OnDeath委托
+         if (IsDead()) OnDeath.Broadcast();
+     }
+
+9.   修改`STUBaseCharacter`：只有当血量变化时，才更新文本显示的内容
+
+     ```c++
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+         ...
+     private:
+         // 角色血量变化回调函数
+         void OnHealthChanged(float Health);
+     };
+     ```
+
+     ```c++
+     void ASTUBaseCharacter::BeginPlay() {
+         Super::BeginPlay();
+     
+         // 检查组件是否成功创建(仅开发阶段可用)
+         check(HealthComponent);
+         check(HealthTextComponent);
+         check(GetCharacterMovement());
+     
+         // 订阅OnDeath委托
+         HealthComponent->OnDeath.AddUObject(this, &ASTUBaseCharacter::OnDeath);
+         // 订阅OnHealthChanged委托
+         HealthComponent->OnHealthChanged.AddUObject(this, &ASTUBaseCharacter::OnHealthChanged);
+         // 先调用一次OnHealthChanged, 获取角色的初始血量
+         OnHealthChanged(HealthComponent->GetHealth());
+     }
+     void ASTUBaseCharacter::OnHealthChanged(float Health) {
+         // 获取角色当前血量并显示
+         const FString HealthString = FString::Printf(TEXT("%.0f"), Health);
+         HealthTextComponent->SetText(FText::FromString(HealthString));
+     }
+     
+     ```
+
+     
+
