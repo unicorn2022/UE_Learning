@@ -555,5 +555,29 @@
      
      ```
 
-     
 
+# 六、ASpectatorPawn：观察者类
+
+>   由于默认的`SpectatorPawn`已经可以实现观察的功能，因此我们不需要自己创建观察者类，只需要在角色死亡时，将控制类切换为观察者类即可
+
+1.   修改`STUBaseCharacter`：
+
+     ```c++
+     #include "GameFramework/Controller.h"
+     // 角色死亡回调函数
+     void ASTUBaseCharacter::OnDeath() {
+         UE_LOG(LogSTUBaseCharacter, Warning, TEXT("Player %s is dead"), *GetName());
+         // 播放死亡动画蒙太奇
+         PlayAnimMontage(DeathAnimMontage);
+         // 禁止角色的移动
+         GetCharacterMovement()->DisableMovement();
+         // 5s后摧毁角色
+         SetLifeSpan(5.0f);
+         // 切换状态, 从而将pawn切换为观察者类
+         if (Controller) {
+             Controller->ChangeState(NAME_Spectating);
+         }
+     }
+     ```
+
+# 七、实战作业：自动治疗
