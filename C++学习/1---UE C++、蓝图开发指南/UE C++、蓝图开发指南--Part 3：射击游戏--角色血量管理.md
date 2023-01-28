@@ -714,3 +714,79 @@ void USTUHealthComponent::SetHealth(float NewHealth) {
 ```
 
 # 八、从高处坠落时的Health变化
+
+>   修改`STUBaseCharacter`，订阅坠落事件的委托`LandedDelegate`
+
+```c++
+UCLASS()
+class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+    GENERATED_BODY()
+	...
+protected:
+    // 角色死亡时的存活时间
+    UPROPERTY(EditDefaultsOnly, Category = "Damage")
+    float LifeSpanOnDeath = 5.0f;
+    // 角色坠落伤害速度范围
+    UPROPERTY(EditDefaultsOnly, Category = "Damage")
+    FVector2D LandedDamageVelocityScale = FVector2D(900.0f, 1200.0f);
+    // 角色坠落伤害范围
+    UPROPERTY(EditDefaultsOnly, Category = "Damage")
+    FVector2D LandedDamageScale = FVector2D(10.0f, 100.0f);
+
+private:
+    // 角色坠落回调函数
+    UFUNCTION()
+    void OnGroundLanded(const FHitResult& Hit);
+};
+
+```
+
+```c++
+void ASTUBaseCharacter::BeginPlay() {
+    Super::BeginPlay();
+
+    // 检查组件是否成功创建(仅开发阶段可用)
+    check(HealthComponent);
+    check(HealthTextComponent);
+    check(GetCharacterMovement());
+
+    // 订阅OnDeath委托
+    HealthComponent->OnDeath.AddUObject(this, &ASTUBaseCharacter::OnDeath);
+    // 订阅OnHealthChanged委托
+    HealthComponent->OnHealthChanged.AddUObject(this, &ASTUBaseCharacter::OnHealthChanged);
+    // 先调用一次OnHealthChanged, 获取角色的初始血量
+    OnHealthChanged(HealthComponent->GetHealth());
+
+    // 订阅LandedDelegate委托
+    LandedDelegate.AddDynamic(this, &ASTUBaseCharacter::OnGroundLanded);
+}
+
+// 角色死亡回调函数
+void ASTUBaseCharacter::OnDeath() {
+    UE_LOG(LogSTUBaseCharacter, Warning, TEXT("Player %s is dead"), *GetName());
+    // 播放死亡动画蒙太奇
+    PlayAnimMontage(DeathAnimMontage);
+    // 禁止角色的移动
+    GetCharacterMovement()->DisableMovement();
+    // 一段时间后摧毁角色
+    SetLifeSpan(LifeSpanOnDeath);
+    // 切换状态, 从而将pawn切换为观察者类
+    if (Controller) {
+        Controller->ChangeState(NAME_Spectating);
+    }
+}
+
+// 角色坠落回调函数
+void ASTUBaseCharacter::OnGroundLanded(const FHitResult& Hit) {
+    // 根据角色坠落时的Z速度, 计算扣除血量
+    const float FallVelocityZ = FMath::Abs(GetCharacterMovement()->Velocity.Z);
+    UE_LOG(LogSTUBaseCharacter, Display, TEXT("On Landed: %f"), FallVelocityZ);
+    if (FallVelocityZ < LandedDamageVelocityScale.X) return;
+    
+    // 将FallVelocityZ映射到(LandedDamageVelocityScale => LandedDamageScale)
+    const float FinalDamage = FMath::GetMappedRangeValueClamped(LandedDamageVelocityScale, LandedDamageScale, FallVelocityZ);
+    UE_LOG(LogSTUBaseCharacter, Display, TEXT("FinalDamage: %f"), FinalDamage);
+    TakeDamage(FinalDamage, FDamageEvent{}, nullptr, nullptr);
+}
+```
+
