@@ -581,3 +581,136 @@
      ```
 
 # 七、实战作业：自动治疗
+
+>   实现生命值的自动增加，所有修改都应该在`STUHealthComponent`中完成
+>
+>   重构之前的代码，令`STUHealthComponent`部分更加简洁
+
+```c++
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "STUHealthComponent.generated.h"
+
+// 声明FOnDeath委托
+DECLARE_MULTICAST_DELEGATE(FOnDeath);
+// 声明FOnHealthChanged委托
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnHealthChanged, float);
+
+UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
+class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent {
+	GENERATED_BODY()
+
+public:	
+	USTUHealthComponent();
+    float GetHealth() const { return Health; }
+
+    // 判断角色是否死亡
+    UFUNCTION(BlueprintCallable)
+    bool IsDead() const { return FMath::IsNearlyZero(Health); }
+
+    // 角色死亡委托
+    FOnDeath OnDeath;
+
+    // 角色血量变化委托
+    FOnHealthChanged OnHealthChanged;
+
+protected:
+    // 角色最大血量
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Health", meta = (ClampMin = "0.0", ClampMax = "1000.0"))
+    float MaxHealth = 100.0f;
+
+    // 角色自动治疗
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Heal")
+    bool AutoHeal = true;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Heal", meta = (EditCondition = "AutoHeal"))
+    float HealUpdateTime = 1.0f;    // 每隔1.0s治疗一次
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Heal", meta = (EditCondition = "AutoHeal"))
+    float HealDelay = 3.0f;         // 初次启动治疗间隔3.0s
+    UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Heal", meta = (EditCondition = "AutoHeal"))
+    float HealModifier = 5.0f;      // 每次治疗恢复5.0血量
+
+    virtual void BeginPlay() override;
+
+private:
+    // 角色当前剩余血量
+    float Health = 0.0f;
+    // 角色自动治疗计时器
+    FTimerHandle HealTimerHandle;
+
+    // 角色受到伤害的回调函数
+    UFUNCTION()
+    void OnTakeAnyDamageHandler(
+        AActor* DamagedActor, float Damage, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser);
+
+    // 角色自动恢复
+    void HealUpdate();
+
+    // 设置角色血量
+    void SetHealth(float NewHealth);
+};
+```
+
+```c++
+#include "Components/STUHealthComponent.h"
+#include "GameFramework/Actor.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogSTUHealthComponent, All, All);
+
+USTUHealthComponent::USTUHealthComponent() {
+    PrimaryComponentTick.bCanEverTick = false;
+}
+
+void USTUHealthComponent::BeginPlay() {
+    Super::BeginPlay();
+
+    SetHealth(MaxHealth);
+
+    // 订阅OnTakeAnyDamage事件
+    AActor* ComponentOwner = GetOwner();
+    if (ComponentOwner) {
+        UE_LOG(LogSTUHealthComponent, Warning, TEXT("订阅OnTakeAnyDamage事件"));
+        ComponentOwner->OnTakeAnyDamage.AddDynamic(this, &USTUHealthComponent::OnTakeAnyDamageHandler);
+    }
+}
+
+// 角色受到伤害的回调函数
+void USTUHealthComponent::OnTakeAnyDamageHandler(
+    AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser) {
+    if (Damage <= 0.0f || IsDead() || !GetWorld()) return;
+
+    SetHealth(Health - Damage);
+
+    // 角色受伤时, 停止自动恢复
+    GetWorld()->GetTimerManager().ClearTimer(HealTimerHandle);
+    
+    // 角色死亡后, 广播OnDeath委托
+    if (IsDead()) OnDeath.Broadcast();
+    // 角色未死亡且可以自动恢复
+    else if (AutoHeal) {
+        GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, this, &USTUHealthComponent::HealUpdate, HealUpdateTime, true, HealDelay);
+    }
+}
+
+// 角色自动恢复
+void USTUHealthComponent::HealUpdate() {
+    SetHealth(Health + HealModifier);
+    // 当角色的生命值最大时, 停止计时器
+    if (FMath::IsNearlyEqual(Health, MaxHealth) && GetWorld()) {
+        GetWorld()->GetTimerManager().ClearTimer(HealTimerHandle);
+    }
+}
+
+// 设置角色血量
+void USTUHealthComponent::SetHealth(float NewHealth) {
+    // 保证Health在合理的范围内
+    Health = FMath::Clamp(NewHealth, 0.0f, MaxHealth);
+    // 广播OnHealthChanged委托
+    OnHealthChanged.Broadcast(Health);
+}
+```
+
+# 八、从高处坠落时的Health变化
