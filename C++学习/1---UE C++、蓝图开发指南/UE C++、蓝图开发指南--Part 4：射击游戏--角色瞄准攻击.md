@@ -140,4 +140,128 @@
 
 7.   修改`BP_STUBaseCharacter`：设置默认生成的武器类为`BP_STUBaseWeapon`
 
-# 二、AHUD类、范围
+# 二、AHUD类：十字瞄准线
+
+>   始终处于屏幕中间的十字瞄准线
+
+1.   `HUD`：Head Up Display，此类负责渲染界面，该界面将叠加在游戏顶部
+
+     1.   我们可以继承该类，并使用此类绘制所需的所有元素
+
+2.   创建C++类`STUGameHUD`，继承于`HUD`
+
+     1.   目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
+
+3.   在`ShootThemUp.Build.cs`中更新路径
+
+     ```c#
+     PublicIncludePaths.AddRange(new string[] { 
+         "ShootThemUp/Public/Player", 
+         "ShootThemUp/Public/Components", 
+         "ShootThemUp/Public/Dev",
+         "ShootThemUp/Public/Weapon",
+         "ShootThemUp/Public/UI"
+     });
+     ```
+
+4.   修改`STUGameHUD`：绘制中心瞄准线
+
+     ```c++
+     #pragma once
+     
+     #include "CoreMinimal.h"
+     #include "GameFramework/HUD.h"
+     #include "STUGameHUD.generated.h"
+     
+     UCLASS()
+     class SHOOTTHEMUP_API ASTUGameHUD : public AHUD
+     {
+     	GENERATED_BODY()
+     public:
+         virtual void DrawHUD() override;
+     
+     private:
+         // 绘制屏幕中心的十字准线
+         void DrawCrossHair();
+     };
+     ```
+
+     ```c++
+     #include "UI/STUGameHUD.h"
+     #include "Engine/Canvas.h"
+     
+     void ASTUGameHUD::DrawHUD() {
+         Super::DrawHUD();
+         DrawCrossHair();
+     }
+     
+     // 绘制屏幕中心的十字准线
+     void ASTUGameHUD::DrawCrossHair() {
+         const float CenterX = Canvas->SizeX * 0.5f, CenterY = Canvas->SizeY * 0.5f;
+     
+         
+         const float HalfLineSize = 10.0f;
+         const float LineThickness = 2.0f;
+         const FLinearColor LineColor = FLinearColor::Green;
+     
+         // 水平线
+         DrawLine(CenterX - HalfLineSize, CenterY, CenterX + HalfLineSize, CenterY, LineColor, LineThickness);
+         // 垂直线
+         DrawLine(CenterX, CenterY - HalfLineSize, CenterX, CenterY + HalfLineSize, LineColor, LineThickness);
+     }
+
+5.   修改`STUGameModeBase`：修改默认HUD类
+
+     ```c++
+     #include "STUGameModeBase.h"
+     #include "Player/STUBaseCharacter.h"
+     #include "Player/STUPlayerController.h"
+     #include "UI/STUGameHUD.h"
+     
+     ASTUGameModeBase::ASTUGameModeBase() {
+         DefaultPawnClass = ASTUBaseCharacter::StaticClass();
+         PlayerControllerClass = ASTUPlayerController::StaticClass();
+         HUDClass = ASTUGameHUD::StaticClass();
+     }
+     ```
+
+6.   修改`BP_STUBaseCharacter/SpringArmComponent`：修改相机的位置
+
+     <img src="AssetMarkdown/image-20230203135405181.png" alt="image-20230203135405181" style="zoom:80%;" />
+
+7.   修改`BP_STUBaseCharacter/HealthTextComponent`：隐藏自己的血量，但
+
+     <img src="AssetMarkdown/image-20230203135604101.png" alt="image-20230203135604101" style="zoom:80%;" />
+
+8.   也可以通过C++修改上述设置：`STUBaseCharacter`
+
+     ```c++
+     // 由于CharacterMovementComponent组件是默认组件, 因此我们需要通过参数显式指定
+     // 在调用父类的构造函数时, 显式指定CharacterMovementComponentName使用自定义的USTUCharacterMovementComponent
+     ASTUBaseCharacter::ASTUBaseCharacter(const FObjectInitializer& ObjInit) 
+         : Super(ObjInit.SetDefaultSubobjectClass<USTUCharacterMovementComponent>(ACharacter::CharacterMovementComponentName)) {
+         // 允许该character每一帧调用Tick()
+         PrimaryActorTick.bCanEverTick = true;
+     
+         // 创建弹簧臂组件, 并设置其父组件为根组件, 允许pawn控制旋转
+         SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>("SpringArmComponent");
+         SpringArmComponent->SetupAttachment(GetRootComponent());
+         SpringArmComponent->bUsePawnControlRotation = true;
+         SpringArmComponent->SocketOffset = FVector(0.0f, 100.0f, 80.0f);
+     
+         // 创建相机组件, 并设置其父组件为弹簧臂组件
+         CameraComponent = CreateDefaultSubobject<UCameraComponent>("CameraComponent");
+         CameraComponent->SetupAttachment(SpringArmComponent);
+     
+         // 创建血量组件, 由于其是纯逻辑的, 不需要设置父组件
+         HealthComponent = CreateDefaultSubobject<USTUHealthComponent>("STUHealthComponent");
+     
+         // 创建血量显示组件, 并设置其父组件为根组件
+         HealthTextComponent = CreateDefaultSubobject<UTextRenderComponent>("TextRenderComponent");
+         HealthTextComponent->SetupAttachment(GetRootComponent());
+         HealthTextComponent->SetOwnerNoSee(true);
+     }
+     ```
+
+     
+
