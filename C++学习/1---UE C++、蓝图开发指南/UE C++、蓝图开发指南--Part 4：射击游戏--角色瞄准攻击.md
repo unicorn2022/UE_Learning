@@ -263,5 +263,181 @@
      }
      ```
 
-     
+# 三、武器组件
 
+> 创建一个组件，用于管理武器相关的内容
+
+1. 添加操作映射：`Fire` => `鼠标左键`
+
+   <img src="AssetMarkdown/image-20230206180206856.png" alt="image-20230206180206856" style="zoom:80%;" />
+
+2. 创建C++类`STUWeaponComponent`，继承于`Actor组件`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Components`
+
+3. 将`SpawnWeapon`函数移到`STUWeaponComponent`中
+
+4. 修改`STUWeaponComponent`：创建`Fire`调用
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Components/ActorComponent.h"
+   #include "STUWeaponComponent.generated.h"
+   
+   class ASTUBaseWeapon;
+   
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       GENERATED_BODY()
+   
+   public:
+       USTUWeaponComponent();
+   
+       // 开火
+       void Fire();
+   
+   protected:
+       // 武器的类别
+       UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+       TSubclassOf<ASTUBaseWeapon> WeaponClass;
+       // 武器绑定的插槽名称
+       UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+       FName WeaponAttachPointName = "WeaponSocket";
+   
+       virtual void BeginPlay() override;
+   
+   private:
+       // 当前武器
+       UPROPERTY()
+       ASTUBaseWeapon* CurrentWeapon = nullptr;
+   
+       // 生成武器
+       void SpawnWeapon();
+   };
+   ```
+
+   ```c++
+   #include "Components/STUWeaponComponent.h"
+   #include "Weapon/STUBaseWeapon.h"
+   #include "GameFramework/Character.h"
+   
+   USTUWeaponComponent::USTUWeaponComponent() {
+       PrimaryComponentTick.bCanEverTick = false;
+   }
+   
+   void USTUWeaponComponent::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 生成武器
+       SpawnWeapon();
+   }
+   
+   // 生成武器
+   void USTUWeaponComponent::SpawnWeapon() {
+       if (!GetWorld()) return;
+       
+       // 判断角色是否存在
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!Character) return;
+       
+       // 生成actor
+       CurrentWeapon = GetWorld()->SpawnActor<ASTUBaseWeapon>(WeaponClass);
+       if (!CurrentWeapon) return;
+   
+       // 将actor绑定到角色身上
+       FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, false);
+       CurrentWeapon->AttachToComponent(Character->GetMesh(), AttachmentRules, WeaponAttachPointName);
+   }
+   
+   // 开火
+   void USTUWeaponComponent::Fire() {
+       if (!CurrentWeapon) return;
+       CurrentWeapon->Fire();
+   }
+
+5. 修改`STUBaseWeapon`：创建`Fire`的接口
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "GameFramework/Actor.h"
+   #include "STUBaseWeapon.generated.h"
+   
+   class USkeletalMeshComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+       GENERATED_BODY()
+   
+   public:
+       ASTUBaseWeapon();
+   
+       // 开火, 不同武器会有不同的开火方式
+       virtual void Fire();
+   
+   protected:
+       // 武器的骨骼网格体
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+       USkeletalMeshComponent* WeaponMesh;
+       virtual void BeginPlay() override;
+   };
+   
+   ```
+
+   ```c++
+   #include "Weapon/STUBaseWeapon.h"
+   #include "Components/SkeletalMeshComponent.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUBaseWeapon, All, All);
+   
+   ASTUBaseWeapon::ASTUBaseWeapon() {
+       PrimaryActorTick.bCanEverTick = false;
+   
+       WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>("WeaponMesh");
+       SetRootComponent(WeaponMesh);
+   }
+   
+   void ASTUBaseWeapon::BeginPlay() {
+       Super::BeginPlay();
+   }
+   
+   // 开火
+   void ASTUBaseWeapon::Fire() {
+       UE_LOG(LogSTUBaseWeapon, Warning, TEXT("Fire with Basic Weapon"));
+   }
+
+6. 修改`STUBaseCharacter`：创建武器组件
+
+   ```c++
+   class USTUWeaponComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+       ...
+   protected:
+       // 组件：武器管理
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+       USTUWeaponComponent* WeaponComponent;
+       ...
+   }
+   ```
+
+   ```c++
+   ASTUBaseCharacter::ASTUBaseCharacter(const FObjectInitializer& ObjInit)
+       : Super(ObjInit.SetDefaultSubobjectClass<USTUCharacterMovementComponent>(ACharacter::CharacterMovementComponentName)) {
+       ...
+           
+       // 创建武器组件, 由于其是纯逻辑的, 不需要设置父组件
+       WeaponComponent = CreateDefaultSubobject<USTUWeaponComponent>("STUWeaponComponent");
+   }
+   
+   void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+       ...
+       // 鼠标左键控制武器开火
+       PlayerInputComponent->BindAction("Fire", IE_Pressed, WeaponComponent, &USTUWeaponComponent::Fire);
+   }
+
+7. 
