@@ -837,5 +837,35 @@
        GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
    }
 
-# 八、动画偏移、瞄准
+# 八、瞄准偏移动画
 
+> 添加目标位移动画：上、下、左、右，使射击时瞄准动作准确
+
+1. 修改角色的9个瞄准偏移动画
+
+   1. 这些动画都是加法动画，是在原有动画的基础上，进行修改
+   2. `附加设置|Additive动画类型`：设置为`网格体空间`
+   3. `附加设置|基础姿势动画`：设置为`Idle`
+
+2. 创建瞄准偏移动画`AO_BaseCharacter`
+
+   1. 修改水平及垂直坐标轴：
+
+      1. 水平坐标：`-90~90`
+      2. 垂直坐标：`-90~90`
+
+   2. 将9个瞄准偏移动画拖放到坐标轴上：
+
+      <img src="AssetMarkdown/image-20230207172719770.png" alt="image-20230207172719770" style="zoom:80%;" />
+
+3. 修改角色的动画蓝图`ABP_BaseCharacter`：
+
+   1. 修改事件图表：获取相机的旋转矢量
+
+      <img src="AssetMarkdown/image-20230207173207428.png" alt="image-20230207173207428" style="zoom:80%;" />
+
+   2. 修改AnimGraph：
+
+      <img src="AssetMarkdown/image-20230207173352715.png" alt="image-20230207173352715" style="zoom:80%;" />
+
+# 九、动画逆运动学
