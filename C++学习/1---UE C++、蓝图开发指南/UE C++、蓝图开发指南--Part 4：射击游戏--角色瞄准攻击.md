@@ -868,4 +868,21 @@
 
       <img src="AssetMarkdown/image-20230207173352715.png" alt="image-20230207173352715" style="zoom:80%;" />
 
-# 九、动画逆运动学
+# 九、动画逆运动：固定左手位置
+
+> 固定左手相对于右手的位置，从而决定整个左臂的位置
+
+1. 通过将相机对准角色的前面，可以看到，当角色移动时，角色的手会乱晃
+
+2. 可以通过固定手的位置来解决该问题
+
+3. 修改角色动画蓝图`ABP_BaseCharacter`的`AnimGraph`
+
+   1. 添加节点`FABRIK`：Forward And Backward Reaching Inverse Kinematics
+
+      <img src="AssetMarkdown/image-20230207210707683.png" alt="image-20230207210707683" style="zoom:80%;" />
+
+   2. 修改节点属性：
+
+   <img src="AssetMarkdown/image-20230207210625316.png" alt="image-20230207210625316" style="zoom:80%;" />
+
