@@ -269,7 +269,7 @@
 
 1. 添加操作映射：`Fire` => `鼠标左键`
 
-   <img src="AssetMarkdown/image-20230206180206856.png" alt="image-20230206180206856" style="zoom:80%;" />
+   <img src="AssetMarkdown/image-20230207213851843.png" alt="image-20230207213851843" style="zoom:80%;" />
 
 2. 创建C++类`STUWeaponComponent`，继承于`Actor组件`
 
@@ -496,7 +496,7 @@
        float TraceMaxDistance = 1500;
    
        // 发射子弹
-       void MakeShot();
+       virtual void MakeShot();
    };
    ```
 
@@ -676,7 +676,7 @@
        ...
    protected:
        // 发射子弹
-       void MakeShot();
+       virtual void MakeShot();
        // 获取玩家控制器
        APlayerController* GetPlayerController() const;
        // 获取玩家的位置和朝向
@@ -782,7 +782,7 @@
    
    protected:
        // 发射子弹
-       void MakeShot();
+       virtual void MakeShot();
        // 对子弹击中的玩家进行伤害
        void MakeDamage(const FHitResult& HitResult) const;
    
@@ -998,3 +998,122 @@
    ```
 
 # 十一、两个新武器类别建模：步枪和榴弹发射器
+
+1. 创建两个C++类`STURifleWeapon`、`STULauncherWeapon`，继承于`STUBaseWeapon`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Weapon`
+
+2. 修改`STUBaseWeapon`：
+
+   1. 将`自动开火`的功能移植到`步枪`中，`榴弹发射器`不能自动开火
+   2. 将`开火随机偏移`的功能移植到`步枪`中，`榴弹发射器`不会有随即偏移
+
+3. 修改`STURifleWeapon`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Weapon/STUBaseWeapon.h"
+   #include "STURifleWeapon.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTURifleWeapon : public ASTUBaseWeapon {
+       GENERATED_BODY()
+   public:
+       virtual void StartFire() override;
+       virtual void StopFire() override;
+   
+   protected:
+       // 自动开火的时间间隔
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+       float TimeBetweenShots = 0.1f;
+       // 子弹的随机偏移角度
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+       float BulletSpread = 1.5f;
+       // 发射子弹
+       virtual void MakeShot() override;
+       // 获取子弹的逻辑路径
+       virtual bool GetTraceData(FVector& TraceStart, FVector& TraceEnd) const override;
+   
+   private:
+       // 自动开火的定时器
+       FTimerHandle ShotTimerHandle;
+   };
+   ```
+
+   ```c++
+   #include "Weapon/STURifleWeapon.h"
+   #include "Engine/World.h"
+   #include "DrawDebugHelpers.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTURifleWeapon, All, All);
+   
+   // 开火, 不同武器会有不同的开火方式
+   void ASTURifleWeapon::StartFire() {
+       MakeShot();
+       GetWorldTimerManager().SetTimer(ShotTimerHandle, this, &ASTURifleWeapon::MakeShot, TimeBetweenShots, true);
+   }
+   // 停止开火
+   void ASTURifleWeapon::StopFire() {
+       GetWorldTimerManager().ClearTimer(ShotTimerHandle);
+   }
+   
+   // 发射子弹
+   void ASTURifleWeapon::MakeShot() {
+       if (!GetWorld()) return;
+   
+       // 获取子弹的逻辑路径
+       FVector TraceStart, TraceEnd;
+       if (!GetTraceData(TraceStart, TraceEnd)) return;
+   
+       // 计算子弹的碰撞结果
+       FHitResult HitResult;
+       MakeHit(HitResult, TraceStart, TraceEnd);
+   
+       if (HitResult.bBlockingHit) {
+           // 对子弹击中的玩家进行伤害
+           MakeDamage(HitResult);
+   
+           // 绘制子弹的路径: 枪口位置 -> 碰撞点
+           DrawDebugLine(GetWorld(), GetMuzzleWorldLocation(), HitResult.ImpactPoint, FColor::Red, false, 3.0f, 0, 3.0f);
+           // 在碰撞处绘制一个球
+           DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 10.0f, 24, FColor::Red, false, 5.0f);
+   
+           // 显示碰撞到了哪个骨骼上, 可以通过这个信息对角色造成不同的伤害
+           UE_LOG(LogSTURifleWeapon, Display, TEXT("Fire hit bone: %s"), *HitResult.BoneName.ToString());
+       } else {
+           // 绘制子弹的路径: 枪口位置 -> 子弹路径的终点
+           DrawDebugLine(GetWorld(), GetMuzzleWorldLocation(), TraceEnd, FColor::Red, false, 3.0f, 0, 3.0f);
+       }
+   }
+   
+   // 获取子弹的逻辑路径
+   bool ASTURifleWeapon::GetTraceData(FVector& TraceStart, FVector& TraceEnd) const {
+       // 获取玩家的位置和朝向
+       FVector ViewLocation;
+       FRotator ViewRotation;
+       if (!GetPlayerViewPoint(ViewLocation, ViewRotation)) return false;
+   
+       // 子弹的起点为: 角色当前位置
+       TraceStart = ViewLocation;
+       // 子弹的方向为: 角色当前正前方 + 一个随机的偏移
+       // 当角色血量很低时, 偏移角可以变大, 模拟角色打不准的情况
+       const auto HalfRad = FMath::DegreesToRadians(BulletSpread);
+       const FVector ShootDirection = FMath::VRandCone(ViewRotation.Vector(), HalfRad);
+       // 子弹的终点为: 角色当前位置沿子弹方向运动一定的距离
+       TraceEnd = TraceStart + ShootDirection * TraceMaxDistance;
+       return true;
+   }
+
+4. 创建蓝图类`BP_STURifleWeapon`，继承于`STURifleWeapon`
+
+   1. 骨骼网格体设置为`Rifle`
+
+5. 修改角色蓝图`BP_STUBaseCharacter|WeaponComponent`
+
+   1. `WeaponClass`设置为`BP_STURifleWeapon`
+
+6. 创建蓝图类`BP_STULauncherWeapon`，继承于`STULauncherWeapon`
+
+   1. 骨骼网格体设置为`Launcher`
