@@ -886,3 +886,115 @@
 
    <img src="AssetMarkdown/image-20230207210625316.png" alt="image-20230207210625316" style="zoom:80%;" />
 
+# 十、自动发射子弹，子弹随机散射
+
+> 实现功能：长按左键连发子弹
+
+1. 修改`STUBaseCharacter`：修改对`Fire`的操作响应
+
+   ```c++
+   void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+       ...
+       // 鼠标左键控制武器开火
+       PlayerInputComponent->BindAction("Fire", IE_Pressed, WeaponComponent, &USTUWeaponComponent::StartFire);
+       PlayerInputComponent->BindAction("Fire", IE_Released, WeaponComponent, &USTUWeaponComponent::StopFire);
+   }
+   ```
+
+2. 修改`STUWeaponComponent`：实现`StartFire`和`StopFire`
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       ...
+   public:
+       // 开火
+       void StartFire();
+       // 停止开火
+       void StopFire();
+       ...
+   }
+   ```
+
+   ```c++
+   // 开火
+   void USTUWeaponComponent::StartFire() {
+       if (!CurrentWeapon) return;
+       CurrentWeapon->StartFire();
+   }
+   // 停止开火
+   void USTUWeaponComponent::StopFire() {
+       if (!CurrentWeapon) return;
+       CurrentWeapon->StopFire();
+   }
+   ```
+
+3. 修改`STUBaseWeapon`：借助定时器实现连续开火功能
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+      	...
+   public:
+       // 开火, 不同武器会有不同的开火方式
+       virtual void StartFire();
+       // 停止开火
+       virtual void StopFire();
+   
+   protected:
+       // 自动开火的时间间隔
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+       float TimeBetweenShots = 0.1f;
+   
+   private:
+       // 自动开火的定时器
+       FTimerHandle ShotTimerHandle;
+   };
+   ```
+
+   ```c++
+   // 开火, 不同武器会有不同的开火方式
+   void ASTUBaseWeapon::StartFire() {
+       MakeShot();
+       GetWorldTimerManager().SetTimer(ShotTimerHandle, this, &ASTUBaseWeapon::MakeShot, TimeBetweenShots, true);
+   }
+   // 停止开火
+   void ASTUBaseWeapon::StopFire() {
+       GetWorldTimerManager().ClearTimer(ShotTimerHandle);
+   }
+   ```
+
+4. 修改`STUBaseWeapon::GetTraceData()`：每次开火有一个随机的偏移
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+       ...
+   protected:
+       // 子弹的随机偏移角度
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+       float BulletSpread = 1.5f;
+   };
+   ```
+
+   ```c++
+   // 获取子弹的逻辑路径
+   bool ASTUBaseWeapon::GetTraceData(FVector& TraceStart, FVector& TraceEnd) const {
+       // 获取玩家的位置和朝向
+       FVector ViewLocation;
+       FRotator ViewRotation;
+       if (!GetPlayerViewPoint(ViewLocation, ViewRotation)) return false;
+   
+       // 子弹的起点为: 角色当前位置
+       TraceStart = ViewLocation;
+       // 子弹的方向为: 角色当前正前方 + 一个随机的偏移
+       // 当角色血量很低时, 偏移角可以变大, 模拟角色打不准的情况
+       const auto HalfRad = FMath::DegreesToRadians(BulletSpread);
+       const FVector ShootDirection = FMath::VRandCone(ViewRotation.Vector(), HalfRad);
+       // 子弹的终点为: 角色当前位置沿子弹方向运动一定的距离
+       TraceEnd = TraceStart + ShootDirection * TraceMaxDistance;
+       return true;
+   }
+   ```
+
+# 十一、两个新武器类别建模：步枪和榴弹发射器
