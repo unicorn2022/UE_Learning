@@ -440,4 +440,220 @@
        PlayerInputComponent->BindAction("Fire", IE_Pressed, WeaponComponent, &USTUWeaponComponent::Fire);
    }
 
-7. 
+
+# 四、碰撞体积概述
+
+1. 调试信息，显示碰撞体积：`show collision`
+
+2. 碰撞矩阵：
+
+   1. 当`Camera`选为`忽略/重叠`时，角色可以与该物体重叠，但相机不会被干扰
+
+   <img src="AssetMarkdown/image-20230206191720376.png" alt="image-20230206191720376" style="zoom:80%;" />
+
+3. 生成重叠事件：在`细节|碰撞`中，勾选`生成重叠事件`，即可在角色与该物体重叠时，角色的事件图表中可以接收到`事件Actor开始重叠`
+
+   <img src="AssetMarkdown/image-20230206192305760.png" alt="image-20230206192305760" style="zoom:80%;" />
+
+4. 获取碰撞信息：在`细节|碰撞`中，勾选`模拟生产命中事件`，即可在角色与该物体重叠时，角色的事件图表中可以接收到`事件命中`
+
+   <img src="AssetMarkdown/image-20230206192343836.png" alt="image-20230206192343836" style="zoom:80%;" />
+
+5. 修改碰撞设置：在`项目设置|碰撞`中，可以添加、修改碰撞预设
+
+   1. 添加两种角色`Enemy`、`Geometry`
+   2. 此时可以发现，在物体的`细节|碰撞|碰撞预设|对象类型`中，多了这两个选项
+
+   <img src="AssetMarkdown/image-20230206192734818.png" alt="image-20230206192734818" style="zoom:80%;" />
+
+# 五、发射轨迹
+
+1. 使用`插槽`获取枪口坐标：
+
+   1. 进入武器`Rifle`的骨骼树，在根骨骼下添加一个插槽，重命名为`MuzzleSocket`
+   2. 将该插槽移动至`Rifle`的枪口位置
+
+   <img src="AssetMarkdown/image-20230206193355594.png" alt="image-20230206193355594" style="zoom:80%;" />
+
+2. 修改`STUBaseWeapon`：添加子弹沿直线射击功能
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+       ...
+   
+   public:
+       // 开火, 不同武器会有不同的开火方式
+       virtual void Fire();
+   
+   protected:
+       // 武器枪口的插槽名称
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+       FName MuzzleSocketName = "MuzzleSocket";
+   
+       // 子弹的最大路程
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+       float TraceMaxDistance = 1500;
+   
+       // 发射子弹
+       void MakeShot();
+   };
+   ```
+
+   ```c++
+   #include "Engine/World.h"
+   #include "DrawDebugHelpers.h"
+   
+   void ASTUBaseWeapon::BeginPlay() {
+       Super::BeginPlay();
+       check(WeaponMesh);
+   }
+   
+   // 开火
+   void ASTUBaseWeapon::Fire() {
+       UE_LOG(LogSTUBaseWeapon, Warning, TEXT("Fire with Basic Weapon"));
+       MakeShot();
+   }
+   
+   // 发射子弹
+   void ASTUBaseWeapon::MakeShot() {
+       if (!GetWorld()) return;
+   
+       // 从枪口插槽中, 获取枪口位置、方向
+       const FTransform SocketTransform = WeaponMesh->GetSocketTransform(MuzzleSocketName);
+       const FVector TraceStart = SocketTransform.GetLocation();
+       const FVector ShootDirection = SocketTransform.GetRotation().GetForwardVector();
+       const FVector TraceEnd = TraceStart + ShootDirection * TraceMaxDistance;
+   
+       // 绘制子弹的路径
+       DrawDebugLine(GetWorld(), TraceStart, TraceEnd, FColor::Red, false, 3.0f, 0, 3.0f);
+   
+       // 获取子弹路径上，第一个碰撞到的对象
+       FHitResult HitResult;
+       GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_Visibility);
+   
+       // 碰撞到了某个物体
+       if (HitResult.bBlockingHit) {
+           DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 10.0f, 24, FColor::Red, false, 5.0f);
+       }
+   }
+
+3. 修改`STUWeaponComponent`：设置武器的所有者
+
+   ```c++
+   // 生成武器
+   void USTUWeaponComponent::SpawnWeapon() {
+       if (!GetWorld()) return;
+       
+       // 判断角色是否存在
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!Character) return;
+       
+       // 生成actor
+       CurrentWeapon = GetWorld()->SpawnActor<ASTUBaseWeapon>(WeaponClass);
+       if (!CurrentWeapon) return;
+   
+       // 将武器绑定到角色身上
+       FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, false);
+       CurrentWeapon->AttachToComponent(Character->GetMesh(), AttachmentRules, WeaponAttachPointName);
+       CurrentWeapon->SetOwner(Character); // 设置武器的所有者
+   }
+   ```
+
+4. 修改`STUBaseWeapon`：让子弹射向瞄准的位置
+
+   ```c++
+   // 发射子弹
+   void ASTUBaseWeapon::MakeShot() {
+       if (!GetWorld()) return;
+   
+       // 获取武器的所有者: 即玩家
+       const auto Player = Cast<ACharacter>(GetOwner());
+       if (!Player) return;
+       const auto Controller = Player->GetController<APlayerController>();
+       if (!Controller) return;
+   
+       // 获取玩家的位置和朝向
+       FVector ViewLocation;
+       FRotator ViewRotation;
+       Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
+   
+       // 子弹路径为: 角色当前位置 -> 角色面朝方向
+       const FTransform SocketTransform = WeaponMesh->GetSocketTransform(MuzzleSocketName);
+       const FVector TraceStart = ViewLocation;
+       const FVector ShootDirection = ViewRotation.Vector();
+       const FVector TraceEnd = TraceStart + ShootDirection * TraceMaxDistance;
+   
+       // 获取子弹路径上，第一个碰撞到的对象
+       FHitResult HitResult;
+       GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_Visibility);
+   
+       if (HitResult.bBlockingHit) {
+           // 绘制子弹的路径: 枪口位置 -> 碰撞点
+           DrawDebugLine(GetWorld(), SocketTransform.GetLocation(), HitResult.ImpactPoint, FColor::Red, false, 3.0f, 0, 3.0f);
+           // 在碰撞处绘制一个球
+           DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 10.0f, 24, FColor::Red, false, 5.0f);
+       } else {
+           // 绘制子弹的路径: 枪口位置 -> 子弹路径的终点
+           DrawDebugLine(GetWorld(), SocketTransform.GetLocation(), TraceEnd, FColor::Red, false, 3.0f, 0, 3.0f);
+       }
+   }
+   ```
+
+5. 问题1：子弹是打在胶囊体上，而不是角色的网格体上
+
+   1. 修改角色的胶囊体组件的大小，可以看到，子弹打到角色的胶囊体上就停止移动了
+   2. 将`胶囊体组件`的碰撞预设的`检测响应|Visibility`设置为`忽略`、`网格体组件`的碰撞预设的`检测响应|Visibility`设置为`阻挡`，即可打击到角色的网格体，而非胶囊体上
+
+6. 问题2：即使我们在敌人的身后，也可以打到敌人
+
+   1. 也就是说，子弹的路径可能与枪的夹角为锐角
+
+7. 问题3：可能会打到自己
+
+   1. 检测碰撞时，添加一个参数`CollisionParams`，用于忽略自己
+
+   ```c++
+   // 发射子弹
+   void ASTUBaseWeapon::MakeShot() {
+       if (!GetWorld()) return;
+   
+       // 获取武器的所有者: 即玩家
+       const auto Player = Cast<ACharacter>(GetOwner());
+       if (!Player) return;
+       const auto Controller = Player->GetController<APlayerController>();
+       if (!Controller) return;
+   
+       // 获取玩家的位置和朝向
+       FVector ViewLocation;
+       FRotator ViewRotation;
+       Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
+   
+       // 子弹路径为: 角色当前位置 -> 角色面朝方向
+       const FTransform SocketTransform = WeaponMesh->GetSocketTransform(MuzzleSocketName);
+       const FVector TraceStart = ViewLocation;
+       const FVector ShootDirection = ViewRotation.Vector();
+       const FVector TraceEnd = TraceStart + ShootDirection * TraceMaxDistance;
+   
+       // 获取子弹路径上，第一个碰撞到的对象
+       FCollisionQueryParams CollisionQueryParams;
+       CollisionQueryParams.AddIgnoredActor(GetOwner());   // 忽略自己
+       FHitResult HitResult;                               // 碰撞的结果
+       GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_Visibility, CollisionQueryParams);
+   
+       if (HitResult.bBlockingHit) {
+           // 绘制子弹的路径: 枪口位置 -> 碰撞点
+           DrawDebugLine(GetWorld(), SocketTransform.GetLocation(), HitResult.ImpactPoint, FColor::Red, false, 3.0f, 0, 3.0f);
+           // 在碰撞处绘制一个球
+           DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 10.0f, 24, FColor::Red, false, 5.0f);
+           
+           // 显示碰撞到了哪个骨骼上, 可以通过这个信息对角色造成不同的伤害
+           UE_LOG(LogSTUBaseWeapon, Display, TEXT("Fire hit bone: %s"), *HitResult.BoneName.ToString());
+       } else {
+           // 绘制子弹的路径: 枪口位置 -> 子弹路径的终点
+           DrawDebugLine(GetWorld(), SocketTransform.GetLocation(), TraceEnd, FColor::Red, false, 3.0f, 0, 3.0f);
+       }
+   }
+   ```
+
+# 六、线迹，重构
