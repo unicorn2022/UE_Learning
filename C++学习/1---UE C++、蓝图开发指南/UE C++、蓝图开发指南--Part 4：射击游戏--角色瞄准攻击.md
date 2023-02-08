@@ -1006,7 +1006,7 @@
 2. 修改`STUBaseWeapon`：
 
    1. 将`自动开火`的功能移植到`步枪`中，`榴弹发射器`不能自动开火
-   2. 将`开火随机偏移`的功能移植到`步枪`中，`榴弹发射器`不会有随即偏移
+   2. 将`开火随机偏移`的功能移植到`步枪`中，`榴弹发射器`不会有随机偏移
 
 3. 修改`STURifleWeapon`
 
@@ -1117,3 +1117,117 @@
 6. 创建蓝图类`BP_STULauncherWeapon`，继承于`STULauncherWeapon`
 
    1. 骨骼网格体设置为`Launcher`
+
+# 十二、榴弹发射器1：火箭生成
+
+1. 在`Launcher`的骨骼树中，添加插槽`MuzzleSocket`，位于枪口处
+
+   <img src="AssetMarkdown/image-20230208105027834.png" alt="image-20230208105027834" style="zoom:80%;" />
+
+2. 创建C++类`STUProjectile`，继承于`Actor`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Weapon`
+
+3. 修改`STUProjectile`：添加球形碰撞体
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "GameFramework/Actor.h"
+   #include "STUProjectile.generated.h"
+   
+   class USphereComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUProjectile : public AActor {
+       GENERATED_BODY()
+   
+   public:
+       ASTUProjectile();
+   
+   protected:
+       // 榴弹的碰撞体
+       UPROPERTY(VisibleDefaultsOnly, Category = "Weapon")
+       USphereComponent* CollisionComponent;
+   
+       virtual void BeginPlay() override;
+   };
+   ```
+
+   ```c++
+   #include "Weapon/STUProjectile.h"
+   #include "Components/SphereComponent.h"
+   
+   ASTUProjectile::ASTUProjectile() {
+       PrimaryActorTick.bCanEverTick = false;
+   
+       // 创建球形碰撞体组件
+       CollisionComponent = CreateDefaultSubobject<USphereComponent>("SphereComponent");
+       CollisionComponent->InitSphereRadius(5.0f);
+       SetRootComponent(CollisionComponent);
+   }
+   
+   void ASTUProjectile::BeginPlay() {
+       Super::BeginPlay();
+   }
+
+4. 修改`STULauncherWeapon`：重写`StartFire()`、`MakeShot()`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Weapon/STUBaseWeapon.h"
+   #include "STULauncherWeapon.generated.h"
+   
+   class ASTUProjectile;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTULauncherWeapon : public ASTUBaseWeapon
+   {
+   	GENERATED_BODY()
+   public:
+       virtual void StartFire() override;
+   
+   protected:
+       // 要发射的榴弹的类
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       TSubclassOf<ASTUProjectile> ProjectileClass;
+   
+       virtual void MakeShot() override;
+   };
+   ```
+
+   ```c++
+   #include "Weapon/STULauncherWeapon.h"
+   #include "Weapon/STUProjectile.h"
+   #include "Kismet/GameplayStatics.h"
+   
+   void ASTULauncherWeapon::StartFire() {
+       MakeShot();
+   }
+   
+   void ASTULauncherWeapon::MakeShot() {
+       const FTransform SpawnTransform(FRotator::ZeroRotator, GetMuzzleWorldLocation());
+       // 在场景中延迟创建一个榴弹
+       auto Projectile = UGameplayStatics::BeginDeferredActorSpawnFromClass(GetWorld(), ProjectileClass, SpawnTransform);
+       // 设置榴弹的参数
+       // ...
+       // 完成榴弹的创建
+       UGameplayStatics::FinishSpawningActor(Projectile, SpawnTransform);
+   }
+
+5. 创建蓝图类`BP_STUProjectile`，继承于`STUProjectile`
+
+   1. 添加一个`球体组件`，用于可视化碰撞体
+      1. 缩放设置为：`(0.095,0.095,0.095)`
+
+6. 修改`BP_STULauncherWeapon`：设置`Projectile Class`为`BP_STUProjectile`
+
+7. 启动游戏，点击发射后，会在枪口处生成一个球
+
+   1. 新建一个材质`M_BaseColor`，将`基础颜色`提升为参数
+   2. 基于`M_BaseColor`创建材质实例`MT_RedColor`，将颜色改为`FF0000`
+   3. 将该材质赋值给`BP_STUProjectile|球体组件`
+
