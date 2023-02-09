@@ -1231,3 +1231,106 @@
    2. 基于`M_BaseColor`创建材质实例`MT_RedColor`，将颜色改为`FF0000`
    3. 将该材质赋值给`BP_STUProjectile|球体组件`
 
+# 十三、榴弹发射器2：榴弹发射
+
+1. 修改`STULauncherWeapon/MakeShot()`：添加榴弹的运动逻辑
+
+   ```c++
+   void ASTULauncherWeapon::MakeShot() {
+       if (!GetWorld()) return;
+   
+       // 获取榴弹的逻辑路径
+       FVector TraceStart, TraceEnd;
+       if (!GetTraceData(TraceStart, TraceEnd)) return;
+   
+       // 计算榴弹的碰撞结果
+       FHitResult HitResult;
+       MakeHit(HitResult, TraceStart, TraceEnd);
+   
+       // 判断榴弹的落点
+       const FVector EndPoint = HitResult.bBlockingHit ? HitResult.ImpactPoint : TraceEnd;
+       // 计算榴弹的射击方向(单位向量)
+       const FVector Direction = (EndPoint - GetMuzzleWorldLocation()).GetSafeNormal();
+   
+   
+       // 榴弹的初始位置
+       const FTransform SpawnTransform(FRotator::ZeroRotator, GetMuzzleWorldLocation());
+       // 在场景中延迟创建一个榴弹
+       ASTUProjectile* Projectile = GetWorld()->SpawnActorDeferred<ASTUProjectile>(ProjectileClass, SpawnTransform);
+       if (Projectile) {
+           // 设置榴弹的参数
+           Projectile->SetShotDirection(Direction);
+           // 完成榴弹的创建
+           Projectile->FinishSpawning(SpawnTransform);
+       }
+   }
+
+2. 修改`STUProjectile`：添加榴弹沿某个方向发射的功能
+
+   ```c++
+   class USphereComponent;
+   class UProjectileMovementComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUProjectile : public AActor {
+       GENERATED_BODY()
+   
+   public:
+       ASTUProjectile();
+   
+       void SetShotDirection(const FVector& Direction) { ShotDirection = Direction; }
+   
+   protected:
+       // 榴弹的碰撞体
+       UPROPERTY(VisibleDefaultsOnly, Category = "Weapon")
+       USphereComponent* CollisionComponent;
+   
+       // 榴弹的运动组件
+       UPROPERTY(VisibleDefaultsOnly, Category = "Weapon")
+       UProjectileMovementComponent* MovementComponent;
+   
+       virtual void BeginPlay() override;
+   
+   private:
+       // 榴弹的发射方向
+       FVector ShotDirection;
+   };
+   ```
+
+   ```c++
+   // Shoot Them Up Game, All Rights Reserved
+   
+   #include "Weapon/STUProjectile.h"
+   #include "Components/SphereComponent.h"
+   #include "GameFramework/ProjectileMovementComponent.h"
+   
+   ASTUProjectile::ASTUProjectile() {
+       PrimaryActorTick.bCanEverTick = false;
+   
+       // 创建球形碰撞体组件
+       CollisionComponent = CreateDefaultSubobject<USphereComponent>("SphereComponent");
+       CollisionComponent->InitSphereRadius(5.0f);
+       SetRootComponent(CollisionComponent);
+   
+       // 创建子弹运动组件
+       MovementComponent = CreateDefaultSubobject<UProjectileMovementComponent>("ProjectileMovementComponent");
+       MovementComponent->InitialSpeed = 2000.0f;
+       MovementComponent->ProjectileGravityScale = 0.0f;
+   }
+   
+   void ASTUProjectile::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 对子弹运动组件进行配置
+       check(MovementComponent);
+       MovementComponent->Velocity = ShotDirection * MovementComponent->InitialSpeed;
+   
+       // 设置子弹的存活周期, 从而自动销毁
+       SetLifeSpan(5.0f);
+   }
+   ```
+
+3. 修改`BP_STUProjectile`：修改`子弹运动组件`的初始速度为`2000`
+
+   1. 可以看到，发出的子弹做平抛运动
+   2. 可以通过修改`发射物重力范围`，来修改子弹的下落加速度
