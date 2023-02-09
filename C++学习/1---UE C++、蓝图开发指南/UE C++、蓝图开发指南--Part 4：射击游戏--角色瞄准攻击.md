@@ -1430,3 +1430,216 @@
    2. 修改`STUProjectile`：将组件的属性设置为`VisibleAnywhere`
    3. 将`STUBaseWeapon`中的`MakeDamage()`移动至`STURifleWeapon`
    4. 将`STUBaseWeapon`中的`DamageAmount`移动至`STURifleWeapon`
+
+# 十五、切换武器
+
+> 通过按键切换武器
+
+1. 修改角色的骨骼树
+
+   1. 在`b_Spine1`处添加插槽，重命名为`ArmoySocket`
+
+   2. 添加预览资产为`Launcher`
+
+   3. 修改位置：
+
+      <img src="AssetMarkdown/image-20230209203743669.png" alt="image-20230209203743669" style="zoom:80%;" />
+
+2. 添加操作映射`NextWeapon`，对应`Tab键`
+
+   <img src="AssetMarkdown/image-20230209203921334.png" alt="image-20230209203921334" style="zoom:80%;" />
+
+3. 修改`STUWeaponComponent`：设置携带多把武器、切换武器的函数
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Components/ActorComponent.h"
+   #include "STUWeaponComponent.generated.h"
+   
+   class ASTUBaseWeapon;
+   
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       GENERATED_BODY()
+   
+   public:
+       USTUWeaponComponent();
+   
+       // 开火
+       void StartFire();
+       // 停止开火
+       void StopFire();
+   
+       // 切换武器
+       void NextWeapon();
+   
+   protected:
+       // 武器的类别
+       UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+       TArray<TSubclassOf<ASTUBaseWeapon>> WeaponClasses;
+       // 手持武器绑定的插槽名称
+       UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+       FName WeaponEquipSocketName = "WeaponSocket";
+       // 背后武器绑定的插槽名称
+       UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+       FName WeaponAmorySocketName = "AmorySocket";
+   
+       virtual void BeginPlay() override;
+       virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+   
+   private:
+       // 当前武器
+       UPROPERTY()
+       ASTUBaseWeapon* CurrentWeapon = nullptr;
+   
+       // 所有的武器
+       UPROPERTY()
+       TArray<ASTUBaseWeapon*> Weapons;
+   
+       // 当前武器指针
+       int32 CurrentWeaponIndex = 0;
+   
+       // 生成武器
+       void SpawnWeapons();
+       // 将武器绑定到角色的某个插槽上
+       void AttachWeaponToSocket(ASTUBaseWeapon* Weapon, USceneComponent* SceneComponent, const FName& SocketName);
+       // 装备武器到角色手上
+       void EquipWeapon(int32 WeaponIndex);
+   };
+   ```
+
+   ```c++
+   #include "Components/STUWeaponComponent.h"
+   #include "Weapon/STUBaseWeapon.h"
+   #include "GameFramework/Character.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUWeaponComponent, All, All);
+   
+   USTUWeaponComponent::USTUWeaponComponent() {
+       PrimaryComponentTick.bCanEverTick = false;
+   }
+   
+   void USTUWeaponComponent::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 生成武器
+       SpawnWeapons();
+       // 装备武器
+       CurrentWeaponIndex = 0;
+       EquipWeapon(CurrentWeaponIndex);
+   }
+   
+   void USTUWeaponComponent::EndPlay(const EEndPlayReason::Type EndPlayReason) {
+       // 销毁所有武器
+       CurrentWeapon = nullptr;
+       for (auto Weapon : Weapons) {
+           Weapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+           Weapon->Destroy();
+       }
+       Weapons.Empty();
+   
+       Super::EndPlay(EndPlayReason);
+   }
+   
+   // 生成武器
+   void USTUWeaponComponent::SpawnWeapons() {
+       // 判断角色是否存在
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!GetWorld() || !Character) return;
+       
+       for (auto WeaponClass : WeaponClasses) {
+           // 生成actor
+           auto Weapon = GetWorld()->SpawnActor<ASTUBaseWeapon>(WeaponClass);
+           if (!Weapon) continue;
+   
+           // 设置武器的所有者
+           Weapon->SetOwner(Character); 
+           Weapons.Add(Weapon);
+   
+           // 将武器绑定到角色的某个插槽上
+           AttachWeaponToSocket(Weapon, Character->GetMesh(), WeaponAmorySocketName);
+       }
+   
+   }
+   
+   // 将武器绑定到角色的某个插槽上
+   void USTUWeaponComponent::AttachWeaponToSocket(ASTUBaseWeapon* Weapon, USceneComponent* SceneComponent, const FName& SocketName) {
+       if (!Weapon || !SceneComponent) return;
+       FAttachmentTransformRules AttachmentRules(EAttachmentRule::SnapToTarget, false);
+       Weapon->AttachToComponent(SceneComponent, AttachmentRules, SocketName);
+   }
+   
+   // 装备武器到角色手上
+   void USTUWeaponComponent::EquipWeapon(int32 WeaponIndex) {
+       // 判断角色是否存在 
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!GetWorld() || !Character) return;
+   
+       // 如果已经有武器, 将当前武器转移到背后
+       if (CurrentWeapon) {
+           CurrentWeapon->StopFire();
+           AttachWeaponToSocket(CurrentWeapon, Character->GetMesh(), WeaponAmorySocketName);
+       }
+   
+       CurrentWeapon = Weapons[WeaponIndex];
+       AttachWeaponToSocket(CurrentWeapon, Character->GetMesh(), WeaponEquipSocketName);
+   }
+   
+   // 开火
+   void USTUWeaponComponent::StartFire() {
+       if (!CurrentWeapon) return;
+       CurrentWeapon->StartFire();
+   }
+   // 停止开火
+   void USTUWeaponComponent::StopFire() {
+       if (!CurrentWeapon) return;
+       CurrentWeapon->StopFire();
+   }
+   
+   // 切换武器
+   void USTUWeaponComponent::NextWeapon() {
+       CurrentWeaponIndex = (CurrentWeaponIndex + 1) % Weapons.Num();
+       EquipWeapon(CurrentWeaponIndex);
+   }
+   ```
+
+4. 修改`STUBaseCharacter`：设置`NextWeapon`的回调函数
+
+   ```c++
+   void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+       ...
+       // 鼠标左键控制武器开火
+       PlayerInputComponent->BindAction("Fire", IE_Pressed, WeaponComponent, &USTUWeaponComponent::StartFire);
+       PlayerInputComponent->BindAction("Fire", IE_Released, WeaponComponent, &USTUWeaponComponent::StopFire);
+       
+       // Tab键切换武器
+       PlayerInputComponent->BindAction("NextWeapon", IE_Pressed, WeaponComponent, &USTUWeaponComponent::NextWeapon);
+   }
+
+5. 修改`BP_STUBaseCharacter|STUWeaponComponent`：设置`Weapon Classes`
+
+6. 修改`STUBaseCharacter`：角色死亡时停止开火
+
+   ```c++
+   void ASTUBaseCharacter::OnDeath() {
+       UE_LOG(LogSTUBaseCharacter, Warning, TEXT("Player %s is dead"), *GetName());
+       // 播放死亡动画蒙太奇
+       PlayAnimMontage(DeathAnimMontage);
+       // 禁止角色的移动
+       GetCharacterMovement()->DisableMovement();
+       // 一段时间后摧毁角色
+       SetLifeSpan(LifeSpanOnDeath);
+       // 切换状态, 从而将pawn切换为观察者类
+       if (Controller) {
+           Controller->ChangeState(NAME_Spectating);
+       }
+   
+       // 禁止胶囊体碰撞
+       GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
+       // 停止武器组件的开火
+       WeaponComponent->StopFire();
+   }
+
+7. 
