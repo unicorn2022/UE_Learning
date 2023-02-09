@@ -784,7 +784,7 @@
        // 发射子弹
        virtual void MakeShot();
        // 对子弹击中的玩家进行伤害
-       void MakeDamage(const FHitResult& HitResult) const;
+       void MakeDamage(const FHitResult& HitResult);
    
    };
    ```
@@ -810,11 +810,11 @@
    }
    
    // 对子弹击中的玩家进行伤害
-   void ASTUBaseWeapon::MakeDamage(const FHitResult& HitResult) const {
+   void ASTUBaseWeapon::MakeDamage(const FHitResult& HitResult) {
        const auto DamageActor = HitResult.GetActor();
        if (!DamageActor) return;
    
-       DamageActor->TakeDamage(DamageAmount, FDamageEvent{}, GetPlayerController(), nullptr);
+       DamageActor->TakeDamage(DamageAmount, FDamageEvent{}, GetPlayerController(), this);
    }
 
 2. 修改`STUBaseCharacter`：当角色死亡时，禁用胶囊体碰撞
@@ -1260,6 +1260,7 @@
        if (Projectile) {
            // 设置榴弹的参数
            Projectile->SetShotDirection(Direction);
+           Projectile->SetOwner(GetOwner());
            // 完成榴弹的创建
            Projectile->FinishSpawning(SpawnTransform);
        }
@@ -1334,3 +1335,98 @@
 
    1. 可以看到，发出的子弹做平抛运动
    2. 可以通过修改`发射物重力范围`，来修改子弹的下落加速度
+
+# 十四、榴弹发射器3：添加球形伤害
+
+1. 修改`STUProjectile`：添加球形伤害
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUProjectile : public AActor {
+       ...
+   protected:
+       // 榴弹的爆炸半径
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       float DamageRadius = 200.0f;
+   
+       // 榴弹的爆炸伤害
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       float DamageAmount = 50.0f;
+   
+       // 榴弹是否对整个爆炸范围造成相同伤害
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       bool DoFullDamage = false;
+           
+       // 榴弹的最长存活时间
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       float LifeSeconds = 5.0f;
+       
+   private:
+       // 榴弹的碰撞响应函数
+       UFUNCTION()
+       void OnProjectileHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+       
+       // 获取发射榴弹的pawn
+       AController* GetController() const;
+   };
+   ```
+
+   ```c++
+   #include "DrawDebugHelpers.h"
+   #include "Kismet/GameplayStatics.h"
+   
+   void ASTUProjectile::BeginPlay() {
+       Super::BeginPlay();
+   
+       check(MovementComponent);
+       check(CollisionComponent);
+   
+       // 对子弹运动组件进行配置
+       MovementComponent->Velocity = ShotDirection * MovementComponent->InitialSpeed;
+   
+       // 设置碰撞响应事件
+       CollisionComponent->IgnoreActorWhenMoving(GetOwner(), true);
+       CollisionComponent->OnComponentHit.AddDynamic(this, &ASTUProjectile::OnProjectileHit);
+   
+       // 设置榴弹的存活周期, 从而自动销毁
+       SetLifeSpan(LifeSeconds);
+   }
+   
+   // 榴弹的碰撞响应函数
+   void ASTUProjectile::OnProjectileHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit) {
+       if (!GetWorld()) return;
+   
+       // 停止榴弹的运动
+       MovementComponent->StopMovementImmediately();
+   
+       // 造成球形伤害
+       UGameplayStatics::ApplyRadialDamage(
+           GetWorld(),                     // 当前世界的指针
+           DamageAmount,                   // 基础伤害
+           GetActorLocation(),             // 球形伤害的中心
+           DamageRadius,                   // 球形伤害的半径
+           UDamageType::StaticClass(),     // 球形伤害的类型
+           {GetOwner()},                   // 球形伤害忽略的actor
+           this,                           // 造成伤害的actor
+           GetController(),                // 造成伤害的actor的controller
+           DoFullDamage);                  // 是否对整个爆炸范围造成相同伤害
+   
+       // 绘制榴弹的爆炸范围
+       DrawDebugSphere(GetWorld(), GetActorLocation(), DamageRadius, 24, FColor::Red, false, 5.0f);
+   
+       // 销毁Actor
+       Destroy();
+   }
+   
+   // 获取发射榴弹的pawn
+   AController* ASTUProjectile::GetController() const {
+       const auto Pawn = Cast<APawn>(GetOwner());
+       return Pawn ? Pawn->GetController() : nullptr;
+   }
+
+2. 重构代码：
+
+   1. 修改`STUBaseWeapon、STURifleWeapon`：将属性设置为`EditDefaultsOnly`
+   2. 修改`STUProjectile`：将组件的属性设置为`VisibleAnywhere`
+   3. 将`STUBaseWeapon`中的`MakeDamage()`移动至`STURifleWeapon`
+   4. 将`STUBaseWeapon`中的`DamageAmount`移动至`STURifleWeapon`
