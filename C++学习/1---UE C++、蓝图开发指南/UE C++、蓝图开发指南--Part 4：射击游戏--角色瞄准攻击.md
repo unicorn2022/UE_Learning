@@ -2092,4 +2092,152 @@
 
    <img src="AssetMarkdown/image-20230210231410798.png" alt="image-20230210231410798" style="zoom:80%;" />
 
-6. 
+# 二十一、切换弹夹动画2：动画通知
+
+1. 创建C++类`STUAnimNotify`，继承于`AnimNotify`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Animations`
+   2. 将通知逻辑转移到基类`STUAnimNotify`
+
+2. 创建C++类`STUReloadFinishedAnimNotify`，继承于`STUAnimNotify`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Animations`
+
+3. 修改`STUEquipFinishedAnimNotify`：将所有功能移动至`STUAnimNotify`
+
+4. 修改`STUAnimNotify`：实现通知的功能
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Animation/AnimNotifies/AnimNotify.h"
+   #include "STUAnimNotify.generated.h"
+   
+   // 声明委托事件
+   DECLARE_MULTICAST_DELEGATE_OneParam(FOnNotifiedSignature, USkeletalMeshComponent*);
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUAnimNotify : public UAnimNotify {
+       GENERATED_BODY()
+   
+   public:
+       virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) override;
+   
+       FOnNotifiedSignature OnNotified;
+   };
+   
+   ```
+
+   ```c++
+   #include "Animations/STUAnimNotify.h"
+   
+   void USTUAnimNotify::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) {
+       // 通过骨骼网格体的指针, 区分通知哪一个角色
+       OnNotified.Broadcast(MeshComp);
+       Super::Notify(MeshComp, Animation);
+   }
+
+5. 修改`STUWeaponComponent`：订阅`STUReloadFinishedAnimNotify`的`Notify`事件
+
+   ```c++
+   // Shoot Them Up Game, All Rights Reserved
+   
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Components/ActorComponent.h"
+   #include "STUWeaponComponent.generated.h"
+   
+   class ASTUBaseWeapon;
+   
+   USTRUCT(BlueprintType)
+   struct FWeaponData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 武器的类别
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       TSubclassOf<ASTUBaseWeapon> WeaponClass;
+   
+       // 切换弹夹动画
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       UAnimMontage* ReloadAnimMontage;
+   };
+   
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+   	...
+   private:
+       // 是否正在更换弹夹
+       bool ReloadAnimInProgress = false;
+   
+   private:
+       // 动画通知回调：切换弹夹
+       void OnReloadFinished(USkeletalMeshComponent* MeshComponent);
+       
+       bool CanReload() const;
+   
+       template<typename T>
+       T* FindNotifyByClass(UAnimSequenceBase* Animation) {
+           if (!Animation) return nullptr;
+   
+           const auto NotifyEvents = Animation->Notifies;
+           for (auto NotifyEvent : NotifyEvents) {
+               auto AnimNotify = Cast<T>(NotifyEvent.Notify);
+               if (AnimNotify) return AnimNotify;
+           }
+   
+           return nullptr;
+       }
+   };
+   ```
+
+   ```c++
+   #include "Animations/STUReloadFinishedAnimNotify.h"
+   
+   void USTUWeaponComponent::Reload() {
+       if (!CanReload()) return;
+       ReloadAnimInProgress = true;
+       PlayAnimMontage(CurrentReloadAnimMontage);
+   }
+   
+   void USTUWeaponComponent::InitAnimation() {
+       // 订阅动画通知：切换武器
+       auto EquipFinishedNotify = FindNotifyByClass<USTUEquipFinishedAnimNotify>(EquipAnimMontage);
+       if (EquipFinishedNotify) {
+           EquipFinishedNotify->OnNotified.AddUObject(this, &USTUWeaponComponent::OnEquipFinished);
+       }
+       
+       // 订阅动画通知：切换弹夹
+       for (auto OneWeaponData : WeaponData) {
+           auto ReloadFinishedNotify = FindNotifyByClass<USTUReloadFinishedAnimNotify>(OneWeaponData.ReloadAnimMontage);
+           if (!ReloadFinishedNotify) continue;
+           ReloadFinishedNotify->OnNotified.AddUObject(this, &USTUWeaponComponent::OnReloadFinished);
+       }
+   }
+   
+   void USTUWeaponComponent::OnReloadFinished(USkeletalMeshComponent* MeshComponent) {
+       // 不是当前Character, 则不响应该事件
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!Character || Character->GetMesh() != MeshComponent) return;
+   
+       ReloadAnimInProgress = false;
+   }
+   
+   
+   bool USTUWeaponComponent::CanFire() const {
+       // 有武器 && 没有在更换武器 && 没有在更换弹夹
+       return CurrentWeapon && !EquipAnimInProgress && !ReloadAnimInProgress;
+   }
+   bool USTUWeaponComponent::CanEquip() const {
+       // 没有在更换武器 && 没有在更换弹夹
+       return !EquipAnimInProgress && !ReloadAnimInProgress;
+   }
+   bool USTUWeaponComponent::CanReload() const {
+       // 有武器 && 没有在更换武器 && 没有在更换弹夹
+       return CurrentWeapon && !EquipAnimInProgress && !ReloadAnimInProgress;
+   }
+
+6. 修改`AM_Reload、AM_Launcher_Reload`：添加通知`ReloadFinishedAnimNotify`
+
+# 二十二、重构
