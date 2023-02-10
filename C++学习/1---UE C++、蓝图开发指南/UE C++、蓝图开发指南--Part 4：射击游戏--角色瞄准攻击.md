@@ -1642,4 +1642,158 @@
        WeaponComponent->StopFire();
    }
 
-7. 
+# 十六、装备动画1：动画通知
+
+1. 修改`STUWeaponComponent`：添加换装备动画
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       ...
+   protected:
+       // 更换装备的动画蒙太奇
+       UPROPERTY(EditDefaultsOnly, Category = "Animation")
+       UAnimMontage* EquipAnimMontage;
+   
+   private:
+       // 播放动画蒙太奇
+       void PlayAnimMontage(UAnimMontage* Animation);
+   };
+   ```
+
+   ```c++
+   void USTUWeaponComponent::EquipWeapon(int32 WeaponIndex) {
+       // 判断角色是否存在 
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!GetWorld() || !Character) return;
+   
+       // 如果已经有武器, 将当前武器转移到背后
+       if (CurrentWeapon) {
+           CurrentWeapon->StopFire();
+           AttachWeaponToSocket(CurrentWeapon, Character->GetMesh(), WeaponAmorySocketName);
+       }
+   
+       // 更换手上的武器
+       CurrentWeapon = Weapons[WeaponIndex];
+       AttachWeaponToSocket(CurrentWeapon, Character->GetMesh(), WeaponEquipSocketName);
+       
+       // 播放更换武器的动画
+       PlayAnimMontage(EquipAnimMontage);
+   }
+   
+   void USTUWeaponComponent::PlayAnimMontage(UAnimMontage* Animation) {
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!Character) return;
+   
+       Character->PlayAnimMontage(Animation);
+   }
+
+2. 根据动画`Equip`创建动画蒙太奇`AM_Equip`，并将其保存到`Player/Animation`中
+
+3. 修改角色蓝图`BP_STUBaseCharacter/WeaponComponent`：将`EquipAnimMontage`赋值为`AM_Equip`
+
+4. 创建C++类`STUEquipFinishedAnimNotify`，继承于`AnimNotify`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Animations`
+
+5. 在`ShootThemUp.Build.cs`中更新路径
+
+   ```c#
+   PublicIncludePaths.AddRange(new string[] { 
+       "ShootThemUp/Public/Player", 
+       "ShootThemUp/Public/Components", 
+       "ShootThemUp/Public/Dev",
+       "ShootThemUp/Public/Weapon",
+       "ShootThemUp/Public/Animations"
+   });
+   ```
+
+6. 修改`STUEquipFinishedAnimNotify`：创建委托事件
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Animation/AnimNotifies/AnimNotify.h"
+   #include "STUEquipFinishedAnimNotify.generated.h"
+   
+   // 声明委托事件
+   DECLARE_MULTICAST_DELEGATE_OneParam(FOnNotifiedSignature, USkeletalMeshComponent*);
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUEquipFinishedAnimNotify : public UAnimNotify {
+       GENERATED_BODY()
+   public:
+       virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) override;
+   
+       FOnNotifiedSignature OnNotified;
+   };
+   ```
+
+   ```c++
+   #include "Animations/STUEquipFinishedAnimNotify.h"
+   
+   void USTUEquipFinishedAnimNotify::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation) {
+       // 通过骨骼网格体的指针, 区分通知哪一个角色
+       OnNotified.Broadcast(MeshComp);
+       Super::Notify(MeshComp, Animation);
+   }
+
+7. 修改`STUWeaponComponent`：订阅`Notify`事件
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       ...
+   private:
+       // 初始化动画通知
+       void InitAnimation();
+       // 动画通知回调
+       void OnEquipFinished(USkeletalMeshComponent* MeshComponent);
+   };
+   ```
+
+   ```c++
+   #include "Animations/STUEquipFinishedAnimNotify.h"
+   
+   void USTUWeaponComponent::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 初始化动画
+       InitAnimation();
+       // 生成武器
+       SpawnWeapons();
+       // 装备武器
+       CurrentWeaponIndex = 0;
+       EquipWeapon(CurrentWeaponIndex);
+   }
+   
+   void USTUWeaponComponent::InitAnimation() {
+       if (!EquipAnimMontage) return;
+       
+       const auto NotifyEvents = EquipAnimMontage->Notifies;
+       for (auto NotifyEvent : NotifyEvents) {
+           auto EquipFinishedNotify = Cast<USTUEquipFinishedAnimNotify>(NotifyEvent.Notify);
+           if (EquipFinishedNotify) {
+               EquipFinishedNotify->OnNotified.AddUObject(this, &USTUWeaponComponent::OnEquipFinished);
+               break;
+           }
+       }
+   
+   }
+   
+   // 动画通知回调
+   void USTUWeaponComponent::OnEquipFinished(USkeletalMeshComponent* MeshComponent) {
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!GetWorld() || !Character) return;
+   
+       // 不是当前character, 则不响应该事件
+       if (Character->GetMesh() != MeshComponent) return;
+       UE_LOG(LogSTUWeaponComponent, Display, TEXT("Equip Finished"));
+   }
+
+8. 修改动画蒙太奇`AM_Equip`：在结束处添加通知
+
+   <img src="AssetMarkdown/image-20230210212724653.png" alt="image-20230210212724653" style="zoom:80%;" />
+
+9. 
