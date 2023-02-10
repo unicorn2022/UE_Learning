@@ -2240,4 +2240,140 @@
 
 6. 修改`AM_Reload、AM_Launcher_Reload`：添加通知`ReloadFinishedAnimNotify`
 
-# 二十二、重构
+# 二十二、重构，打包游戏
+
+1. 修改`STUBaseWeapon/BeginPlay`：
+
+   ```c++
+   void ASTUBaseWeapon::BeginPlay() {
+       Super::BeginPlay();
+       
+       check(WeaponMesh);
+       checkf(DefaultAmmo.Bullets > 0, TEXT("Bullets can't be <= 0"));
+       checkf(DefaultAmmo.Clips > 0, TEXT("Clips can't be <= 0"));
+       CurrentAmmo = DefaultAmmo;
+   }
+
+2. 修改`STUWeaponComponent/BeginPlay`：
+
+   ```c++
+   constexpr static int32 WeaponNum = 2;
+   
+   void USTUWeaponComponent::BeginPlay() {
+       Super::BeginPlay();
+   
+       checkf(WeaponData.Num() == WeaponNum, TEXT("Our character can only hold %i weapons"), WeaponNum);
+   
+       // 初始化动画
+       InitAnimation();
+       // 生成武器
+       SpawnWeapons();
+       // 装备武器
+       CurrentWeaponIndex = 0;
+       EquipWeapon(CurrentWeaponIndex);
+   }
+   ```
+
+3. 新建头文件`AnimUtils.h`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Animations`
+   2. 用于存放与实际动画无关的一些工具函数
+   3. 将`STUWeaponComponent.h`中的模板函数移动带该类中
+
+   ```c++
+   #pragma once
+   
+   class AnimUtils {
+   public:
+       template <typename T>
+       static T* FindNotifyByClass(UAnimSequenceBase* Animation) {
+           if (!Animation) return nullptr;
+   
+           const auto NotifyEvents = Animation->Notifies;
+           for (auto NotifyEvent : NotifyEvents) {
+               auto AnimNotify = Cast<T>(NotifyEvent.Notify);
+               if (AnimNotify) return AnimNotify;
+           }
+   
+           return nullptr;
+       }
+   };
+   ```
+
+4. 修改`STUWeaponComponent/InitAnimation`：
+
+   ```c++
+   void USTUWeaponComponent::InitAnimation() {
+       // 订阅动画通知：切换武器
+       auto EquipFinishedNotify = AnimUtils::FindNotifyByClass<USTUEquipFinishedAnimNotify>(EquipAnimMontage);
+       if (EquipFinishedNotify) {
+           EquipFinishedNotify->OnNotified.AddUObject(this, &USTUWeaponComponent::OnEquipFinished);
+       } else {
+           UE_LOG(LogSTUWeaponComponent, Error, TEXT("Equip animation notify is forgotten to set"));
+           checkNoEntry();
+       }
+       
+       // 订阅动画通知：切换弹夹
+       for (auto OneWeaponData : WeaponData) {
+           auto ReloadFinishedNotify = AnimUtils::FindNotifyByClass<USTUReloadFinishedAnimNotify>(OneWeaponData.ReloadAnimMontage);
+           if (!ReloadFinishedNotify) {
+               UE_LOG(LogSTUWeaponComponent, Error, TEXT("Reload animation notify is forgotten to set"));
+               checkNoEntry();
+           }
+           UE_LOG(LogSTUWeaponComponent, Warning, TEXT("InitAnimation: ReloadFinishedNotify"));
+           ReloadFinishedNotify->OnNotified.AddUObject(this, &USTUWeaponComponent::OnReloadFinished);
+       }
+   }
+
+5. 新建头文件`STUCoreTypes.h`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public`
+   2. 用于存放自定义的结构体类
+   3. 将`STUBaseWeapon/FAmmoData`存放到该头文件中
+   4. 将`STUWeaponComponent/FWeaponData`存放到该头文件中
+   5. 将`STUHealthComponent`的两个事件存放到该头文件中
+
+   ```c++
+   #pragma once
+   #include "STUCoreTypes.generated.h"
+   
+   /* Weapon */
+   class ASTUBaseWeapon;
+   
+   DECLARE_MULTICAST_DELEGATE(FOnClipEmptySignature);
+   
+   USTRUCT(BlueprintType)
+   struct FAmmoData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 子弹数量
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       int32 Bullets;
+   
+       // 弹夹数量
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon", meta = (EditCondition = "!Infinite"))
+       int32 Clips;
+   
+       // 弹夹是否为无限的
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       bool Infinite;
+   };
+   
+   USTRUCT(BlueprintType)
+   struct FWeaponData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 武器的类别
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       TSubclassOf<ASTUBaseWeapon> WeaponClass;
+   
+       // 切换弹夹动画
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       UAnimMontage* ReloadAnimMontage;
+   };
+   
+   /* Health */
+   DECLARE_MULTICAST_DELEGATE(FOnDeath);
+   DECLARE_MULTICAST_DELEGATE_OneParam(FOnHealthChanged, float);
+   ```
+
