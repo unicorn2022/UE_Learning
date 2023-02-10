@@ -1851,3 +1851,24 @@
        return !EquipAnimInProgress;
    }
 
+# 十八、装备动画3：动画姿态缓存
+
+1. 在移动时更换武器，动画会有一些问题，脚步的动画会被清除
+
+   1. 因为我们将这个动画放在了最后一个插槽中，这会删除有关当前动画姿势的所有信息
+   2. 实际上，这就是死亡动画的实现原理
+
+2. 修改`AM_Equip`：将插槽修改为`DefaultGroup.UpperBody`
+
+3. 修改角色的动画蓝图`ABP_BaseCharacter/AnimGraph`
+
+   1. 将原有姿势存入缓存
+   2. 在输出姿势时，将原有姿势与切换武器的姿势混合，分割骨骼为`b_Spine`
+
+   <img src="AssetMarkdown/image-20230210220539248.png" alt="image-20230210220539248" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230210220559716.png" alt="image-20230210220559716" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230210220614328.png" alt="image-20230210220614328" style="zoom:80%;" />
+
+   
