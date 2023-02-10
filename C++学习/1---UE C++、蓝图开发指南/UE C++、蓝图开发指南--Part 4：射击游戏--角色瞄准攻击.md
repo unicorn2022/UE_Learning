@@ -1796,4 +1796,58 @@
 
    <img src="AssetMarkdown/image-20230210212724653.png" alt="image-20230210212724653" style="zoom:80%;" />
 
-9. 
+# 十七、装备动画2：CanEquip()和CanFire()函数
+
+1. 修改`STUWeaponComponent`：更换装备和开火时，添加判断条件，防止冲突
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       ...
+   
+   private:
+       // 是否正在更换武器
+       bool EquipAnimInProgress = false;
+   
+   private:
+       bool CanFire() const;
+       bool CanEquip() const;
+   };
+   ```
+
+   ```c++
+   void USTUWeaponComponent::EquipWeapon(int32 WeaponIndex) {
+       ...    
+       // 播放更换武器的动画
+       EquipAnimInProgress = true;
+       PlayAnimMontage(EquipAnimMontage);
+   }
+   
+   void USTUWeaponComponent::StartFire() {
+       if (!CanFire()) return;
+       CurrentWeapon->StartFire();
+   }
+   
+   void USTUWeaponComponent::NextWeapon() {
+       if (!CanEquip()) return;
+       CurrentWeaponIndex = (CurrentWeaponIndex + 1) % Weapons.Num();
+       EquipWeapon(CurrentWeaponIndex);
+   }
+   
+   void USTUWeaponComponent::OnEquipFinished(USkeletalMeshComponent* MeshComponent) {
+       // 不是当前Character, 则不响应该事件
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!Character || Character->GetMesh() != MeshComponent) return;
+   
+       EquipAnimInProgress = false;
+   }
+   
+   bool USTUWeaponComponent::CanFire() const {
+       // 有武器且没有正在更换武器
+       return CurrentWeapon && !EquipAnimInProgress;
+   }
+   bool USTUWeaponComponent::CanEquip() const {
+       // 没有正在更换武器
+       return !EquipAnimInProgress;
+   }
+
