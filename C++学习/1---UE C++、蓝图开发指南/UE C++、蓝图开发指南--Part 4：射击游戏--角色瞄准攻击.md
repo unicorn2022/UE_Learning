@@ -1688,7 +1688,9 @@
        Character->PlayAnimMontage(Animation);
    }
 
-2. 根据动画`Equip`创建动画蒙太奇`AM_Equip`，并将其保存到`Player/Animation`中
+2. 根据动画`Equip`创建动画蒙太奇`AM_Equip`
+
+   1. 目录：`Player/Animation`
 
 3. 修改角色蓝图`BP_STUBaseCharacter/WeaponComponent`：将`EquipAnimMontage`赋值为`AM_Equip`
 
@@ -1970,3 +1972,124 @@
 
    1. 步枪：`15, 10, true`
    2. 榴弹发射器：`1, 5, false`
+
+# 二十、切换弹夹动画1：动画蒙太奇
+
+1. 基于两个切换弹夹的动画`Launcher_Reload、Reload`，创建两个动画蒙太奇`AM_Launcher_Reload、AM_Reload`
+
+   1. 目录：`Player/Animation`
+   2. 将插槽设置为`DefaultGroup.UpperBody`
+
+2. 添加操作映射`Reload`，对应`R`键
+
+   <img src="AssetMarkdown/image-20230210225030405.png" alt="image-20230210225030405" style="zoom:80%;" />
+
+3. 重构并修改`STUWeaponComponent`：将与武器有关的信息，放在一个新的结构体中
+
+   ```c++
+   USTRUCT(BlueprintType)
+   struct FWeaponData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 武器的类别
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       TSubclassOf<ASTUBaseWeapon> WeaponClass;
+   
+       // 切换弹夹动画
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       UAnimMontage* ReloadAnimMontage;
+   };
+   
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       ...
+   
+   public:
+       // 切换弹夹
+       void Reload();
+   
+   protected:
+       // 武器的相关数据: 武器类, 切换弹夹的动画
+       UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+       TArray<FWeaponData> WeaponData;
+   
+   private:
+       // 当前武器
+       UPROPERTY()
+       ASTUBaseWeapon* CurrentWeapon = nullptr;
+       // 当前武器切换弹夹的动画
+       UPROPERTY()
+       UAnimMontage* CurrentReloadAnimMontage = nullptr;
+       ...
+   };
+   ```
+
+   ```c++
+   void USTUWeaponComponent::SpawnWeapons() {
+       // 判断角色是否存在
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!GetWorld() || !Character) return;
+       
+       for (auto OneWeaponData : WeaponData) {
+           // 生成actor
+           auto Weapon = GetWorld()->SpawnActor<ASTUBaseWeapon>(OneWeaponData.WeaponClass);
+           if (!Weapon) continue;
+   
+           // 设置武器的所有者
+           Weapon->SetOwner(Character); 
+           Weapons.Add(Weapon);
+   
+           // 将武器绑定到角色的某个插槽上
+           AttachWeaponToSocket(Weapon, Character->GetMesh(), WeaponAmorySocketName);
+       }
+   }
+   
+   void USTUWeaponComponent::EquipWeapon(int32 WeaponIndex) {
+       if (WeaponIndex < 0 || WeaponIndex >= Weapons.Num()) {
+           UE_LOG(LogSTUWeaponComponent, Warning, TEXT("Invalid Weapon Index!!!"));
+           return;
+       }
+   
+       // 判断角色是否存在 
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!GetWorld() || !Character) return;
+   
+       // 如果已经有武器, 将当前武器转移到背后
+       if (CurrentWeapon) {
+           CurrentWeapon->StopFire();
+           AttachWeaponToSocket(CurrentWeapon, Character->GetMesh(), WeaponAmorySocketName);
+       }
+   
+       // 更换手上的武器
+       CurrentWeapon = Weapons[WeaponIndex];
+       const auto CurrentWeaponData = WeaponData.FindByPredicate([&](const FWeaponData& Data) { 
+           return Data.WeaponClass == CurrentWeapon->GetClass(); 
+       });
+       CurrentReloadAnimMontage = CurrentWeaponData ? CurrentWeaponData->ReloadAnimMontage : nullptr;
+       AttachWeaponToSocket(CurrentWeapon, Character->GetMesh(), WeaponEquipSocketName);
+       
+       // 播放更换武器的动画
+       EquipAnimInProgress = true;
+       PlayAnimMontage(EquipAnimMontage);
+   }
+   
+   void USTUWeaponComponent::Reload() {
+       PlayAnimMontage(CurrentReloadAnimMontage);
+   }
+
+4. 修改`STUBaseCharacter`：订阅`Reload`事件
+
+   ```c++
+   void ASTUBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+       ...
+        
+       // R键切换弹夹
+       PlayerInputComponent->BindAction("Reload", IE_Pressed, WeaponComponent, &USTUWeaponComponent::Reload);
+   }
+   ```
+
+5. 修改`BP_STUBaseCharacter/WeaponComponent`：设置`WeaponData`
+
+   <img src="AssetMarkdown/image-20230210231410798.png" alt="image-20230210231410798" style="zoom:80%;" />
+
+6. 
