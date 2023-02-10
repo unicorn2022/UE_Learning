@@ -1871,4 +1871,102 @@
 
    <img src="AssetMarkdown/image-20230210220614328.png" alt="image-20230210220614328" style="zoom:80%;" />
 
+# 十九、弹药库
+
+1. 修改`STUBaseWeapon`：创建弹药库的逻辑数据
+
+   ```c++
+   USTRUCT(BlueprintType)
+   struct FAmmoData {
+       GENERATED_USTRUCT_BODY()
    
+       // 子弹数量
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       int32 Bullets;
+   
+       // 弹夹数量
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon", meta = (EditCondition = "!Infinite"))
+       int32 Clips;
+   
+       // 弹夹是否为无限的
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       bool Infinite;
+   };
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+       ...
+   
+   protected:
+       // 默认弹药库
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Weapon")
+       FAmmoData DefaultAmmo{15, 10, false};
+   
+   protected:
+       // 每次发射后减少弹药
+       void DecreaseAmmo();
+       // 判断弹药库是否为空
+       bool IsAmmoEmpty() const;
+       // 判断弹夹是否为空
+       bool IsClipEmpty() const;
+       // 切换弹夹
+       void ChangeClip();
+       // 将弹药库信息显示到控制台
+       void LogAmmo() const;
+   
+   private:
+       // 当前弹药库
+       FAmmoData CurrentAmmo;
+   };
+   ```
+
+   ```c++
+   // 每次发射后减少子弹
+   void ASTUBaseWeapon::DecreaseAmmo() {
+       CurrentAmmo.Bullets--;
+       LogAmmo();
+   
+       if (IsClipEmpty() && !IsClipEmpty()) ChangeClip();
+   }
+   // 判断弹药库是否为空
+   bool ASTUBaseWeapon::IsAmmoEmpty() const {
+       return !CurrentAmmo.Infinite && CurrentAmmo.Bullets == 0 && CurrentAmmo.Clips == 0;
+   }
+   // 判断弹夹是否为空
+   bool ASTUBaseWeapon::IsClipEmpty() const {
+       return CurrentAmmo.Bullets == 0;
+   }
+   // 切换弹夹
+   void ASTUBaseWeapon::ChangeClip() {
+       CurrentAmmo.Bullets = DefaultAmmo.Bullets;
+       if (!CurrentAmmo.Infinite) CurrentAmmo.Clips--;
+       UE_LOG(LogSTUBaseWeapon, Display, TEXT("------ Change Clip ------"));
+   }
+   // 将弹药库信息显示到控制台
+   void ASTUBaseWeapon::LogAmmo() const {
+       FString AmmoInfo = "Ammo: " + FString::FromInt(CurrentAmmo.Bullets) + "/";
+       AmmoInfo += CurrentAmmo.Infinite ? "Infinite" : FString::FromInt(CurrentAmmo.Clips);
+       UE_LOG(LogSTUBaseWeapon, Display, TEXT("%s"), *AmmoInfo);
+   }
+
+2. 修改`STURifleWeapon、STULauncherWeapon`：发射时减少弹药数
+
+   ```c++
+   void ASTURifleWeapon::MakeShot() {
+       // 判断弹药库是否为空
+       if (!GetWorld() || IsAmmoEmpty()) {
+           StopFire();
+           return;
+       }
+       
+   	...
+           
+       // 减少弹药数
+       DecreaseAmmo();
+   }
+   ```
+
+3. 修改`BP_STURifleWeapon、BP_STULauncherWeapon`：设置弹药数量
+
+   1. 步枪：`15, 10, true`
+   2. 榴弹发射器：`1, 5, false`
