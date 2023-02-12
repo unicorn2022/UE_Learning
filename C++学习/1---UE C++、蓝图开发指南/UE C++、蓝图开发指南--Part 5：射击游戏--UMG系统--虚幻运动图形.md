@@ -243,3 +243,111 @@
    1. `BP_STURifleWeapon`：`RifleMainIcon`、`RifleCrossHair`
    2. `BP_STULauncherWeapon`：`LauncherMainIcon`、`LauncherCrossHair`
 
+10. 修改`SkySphere`：清除`Direction Light Actor`，`Sun Height`设置为`-1`
+
+    <img src="AssetMarkdown/image-20230212224516937.png" alt="image-20230212224516937" style="zoom:80%;" />
+
+# 四、实战作业：武器弹药库UI
+
+1. 修改`STUBaseWeapon`：添加`AmmoData`的`getter`
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+       ...
+   
+   public:
+       FAmmoData GetAmmoData() const { return CurrentAmmo; }
+   };
+
+2. 修改`STUWeaponComponent`：添加`CurrentAmmoData`的`getter`函数
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       GENERATED_BODY()
+   
+   public:
+       // 获取武器弹药库数据
+       bool GetCurrentWeaponAmmoData(FAmmoData& AmmoData) const;
+   };
+   ```
+
+   ```c++
+   bool USTUWeaponComponent::GetCurrentWeaponAmmoData(FAmmoData& AmmoData) const {
+       if (!CurrentWeapon) return false;
+       AmmoData = CurrentWeapon->GetAmmoData();
+       return true;
+   }
+   ```
+
+3. 修改`STUPlayerHUDWidget`：添加`UIData`的`getter`函数，将获取武器组件的功能抽象出来
+
+   ```c++
+   class USTUWeaponComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+       GENERATED_BODY()
+   public:
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       float GetHealthPercent() const;
+   
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool GetCurrentWeaponUIData(FWeaponUIData& UIData) const;
+   
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool GetCurrentWeaponAmmoData(FAmmoData& AmmoData) const;
+   
+   private:
+       USTUWeaponComponent* GetWeaponComponent() const;
+   };
+   ```
+
+   ```c++
+   bool USTUPlayerHUDWidget::GetCurrentWeaponUIData(FWeaponUIData& UIData) const {
+       const auto WeaponComponent = GetWeaponComponent();
+       if (!WeaponComponent) return false;
+   
+       return WeaponComponent->GetCurrentWeaponUIData(UIData);
+   }
+   
+   bool USTUPlayerHUDWidget::GetCurrentWeaponAmmoData(FAmmoData& AmmoData) const {
+       const auto WeaponComponent = GetWeaponComponent();
+       if (!WeaponComponent) return false;
+   
+       return WeaponComponent->GetCurrentWeaponAmmoData(AmmoData);
+   }
+   
+   USTUWeaponComponent* USTUPlayerHUDWidget::GetWeaponComponent() const {
+       const auto Player = GetOwningPlayerPawn();
+       if (!Player) return nullptr;
+   
+       const auto Component = Player->GetComponentByClass(USTUWeaponComponent::StaticClass());
+       const auto WeaponComponent = Cast<USTUWeaponComponent>(Component);
+       return WeaponComponent;
+   }
+   ```
+
+4. 修改`WBP_PlayerHUD`
+
+   1. 修改`Get_CrossHairImage`：
+
+      <img src="AssetMarkdown/image-20230212223130250.png" alt="image-20230212223130250" style="zoom:80%;" />
+
+      <img src="AssetMarkdown/image-20230212223111905.png" alt="image-20230212223111905" style="zoom:80%;" />
+
+   2. 添加控件：
+
+      1. `水平框`：勾选`大小到内容`，`锚点`为`右下角`，`位置`为`(-50,-50)`，`对齐`为`(1,1)`
+
+      2. `文本`：默认为`0 / 0`，绑定为函数，重命名为`Get_AmmoText`
+
+         <img src="AssetMarkdown/image-20230212225150325.png" alt="image-20230212225150325" style="zoom:80%;" />
+
+      3. `间隔区`：`外观/尺寸`为`(30,1)`
+
+      4. `图像`：预览图为`RifleMainIcon`，绑定为函数，重命名为`Get_WeaponIcon`
+
+         <img src="AssetMarkdown/image-20230212224248561.png" alt="image-20230212224248561" style="zoom:80%;" />
+
