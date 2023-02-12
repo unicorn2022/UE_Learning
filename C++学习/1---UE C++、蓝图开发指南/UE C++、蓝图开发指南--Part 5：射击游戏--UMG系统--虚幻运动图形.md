@@ -351,3 +351,78 @@
 
          <img src="AssetMarkdown/image-20230212224248561.png" alt="image-20230212224248561" style="zoom:80%;" />
 
+# 五、观察者模式的UI
+
+1. 修改`STUPlayerHUDWidget`：添加判断角色是否存活 & 是否处于观察者模式
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+       ...
+   public:
+       // 玩家是否存活
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool IsPlayerAlive() const;
+   
+       // 玩家是否处于观察者模式
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool IsPlayerSpectating() const;
+   
+   private:
+       USTUHealthComponent* GetHealthComponent() const;
+   };
+   ```
+
+   ```c++
+   // 玩家是否存活
+   bool USTUPlayerHUDWidget::IsPlayerAlive() const {
+       const auto HealthComponent = GetHealthComponent();
+       return HealthComponent && !HealthComponent->IsDead();
+   }
+   
+   // 玩家是否处于观察者模式
+   bool USTUPlayerHUDWidget::IsPlayerSpectating() const {
+       const auto Controller = GetOwningPlayer();
+       return Controller && Controller->GetStateName() == NAME_Spectating;
+   }
+
+2. 修改`WBP_PlayerHUD`：
+
+   1. `ProgressBar_0`：绑定`可视性`属性，函数重命名为`Is_Player_Alive`
+
+      <img src="AssetMarkdown/image-20230212230605800.png" alt="image-20230212230605800" style="zoom:80%;" />
+
+   2. `Image_0`：绑定为`Is_Player_Alive`
+
+   3. `水平框`：绑定为`Is_Player_Alive`
+
+3. 创建用户界面/控件蓝图`WBP_SpectatorHUD`：
+
+   1. 添加控件`循环动态流览图显示`：`图像块数量`为`14`，`周期`为`3`，`颜色`为`红色`
+   2. 添加控件`文本框`：默认文本为`您已死亡`
+   3. 添加控件`覆层`，并将上述两个控件作为覆层的子控件：`位置`为`(0,0)`，`尺寸`为`(200,200)`
+
+4. 修改`WBP_PlayerHUD`：
+
+   1. 添加控件`WBP_SpectatorHUD`：
+
+      1. `锚点`为`居中`，`位置`为`(0,0)`，`对齐`为`(0.5,0.5)`
+      2. 绑定`可视性`属性，函数重命名为`Is_Player_Spectating`
+
+      <img src="AssetMarkdown/image-20230212231752381.png" alt="image-20230212231752381" style="zoom:80%;" />
+
+5. 修改`WBP_SpectatorHUD`：
+
+   1. 选中文本框，添加动画`TextBlinking`
+
+      1. 添加轨道/文本`DeadTextBlock`
+
+      2. 添加轨道`颜色和不透明度`，在该轨道上添加关键帧
+
+         <img src="AssetMarkdown/image-20230212232412243.png" alt="image-20230212232412243" style="zoom:80%;" />
+
+   2. 修改事件图表：在初始化时开始播放动画
+
+      <img src="AssetMarkdown/image-20230212232625622.png" alt="image-20230212232625622" style="zoom:80%;" />
+
+6. 
