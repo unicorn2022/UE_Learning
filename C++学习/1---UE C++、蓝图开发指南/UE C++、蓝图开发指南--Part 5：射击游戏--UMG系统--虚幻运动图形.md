@@ -129,3 +129,117 @@
    2. 将`类默认值/PlayerHUDWidgetClass`设置为`WBP_PlayerHUD`
       1. 可以通过修改这个属性，选择创建哪一种UI界面
 
+# 三、每种武器的瞄准UI
+
+1. 将`UI/Images`迁移到本项目中
+
+2. 修改`WBP_PlayerHUD`
+
+   1. 添加`图像`控件，选择`RifleCrossHair`，然后勾选`大小到内容`
+   2. 将锚点修改为`中央`，`位置X(Y)`均设置为0，`对齐`设置为`(0.5,0.5)`
+
+   <img src="AssetMarkdown/image-20230212215759334.png" alt="image-20230212215759334" style="zoom:80%;" />
+
+3. 修改`STUCoreType`：创建新类型`FWeaponUIData`
+
+   ```c++
+   USTRUCT(BlueprintType)
+   struct FWeaponUIData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 武器的图标
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       UTexture2D* MainIcon;
+       
+       // 武器的瞄准线图标
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       UTexture2D* CrossHairIcon;
+   };
+   ```
+
+4. 修改`STUBaseWeapon`：添加武器的显示UI数据
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+       ...
+   
+   public:
+       FWeaponUIData GetUIData() const { return UIData; }
+   
+   protected:    // 武器的显示UI
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       FWeaponUIData UIData;
+   };
+
+5. 修改`STUWeaponComponent`：添加`UIData`的`getter`函数
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       GENERATED_BODY()
+   
+   public:
+       // 获取武器UI数据
+       bool GetWeaponUIData(FWeaponUIData& UIData) const;
+   };
+   ```
+
+   ```c++
+   bool USTUWeaponComponent::GetWeaponUIData(FWeaponUIData& UIData) const {
+       if (!CurrentWeapon) return false;
+       UIData = CurrentWeapon->GetUIData();
+       return true;
+   }
+   ```
+
+6. 修改`STUPlayerHUDWidget`：添加`UIData`的`getter`函数
+
+   ```c++
+   ...
+   #include "STUCoreTypes.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+       GENERATED_BODY()
+   public:
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       float GetHealthPercent() const;
+   
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool GetWeaponUIData(FWeaponUIData& UIData) const;
+   };
+   ```
+
+   ```c++
+   bool USTUPlayerHUDWidget::GetWeaponUIData(FWeaponUIData& UIData) const {
+       const auto Player = GetOwningPlayerPawn();
+       if (!Player) return false;
+   
+       const auto Component = Player->GetComponentByClass(USTUWeaponComponent::StaticClass());
+       const auto WeaponComponent = Cast<USTUWeaponComponent>(Component);
+       if (!WeaponComponent) return false;
+   
+       return WeaponComponent->GetWeaponUIData(UIData);
+   }
+   ```
+
+7. 修改`STUGameHUD/DrawHUD`
+
+   ```c++
+   void ASTUGameHUD::DrawHUD() {
+       Super::DrawHUD();
+       // DrawCrossHair();
+   }
+
+8. 修改`WBP_PlayerHUD`
+
+   1. 对`图像框/外观/笔刷`属性进行绑定，函数重命名为`Get_CrossHairImage`
+
+   <img src="AssetMarkdown/image-20230212220456411.png" alt="image-20230212220456411" style="zoom:80%;" />
+
+9. 为每种武器设置`UIData`
+
+   1. `BP_STURifleWeapon`：`RifleMainIcon`、`RifleCrossHair`
+   2. `BP_STULauncherWeapon`：`LauncherMainIcon`、`LauncherCrossHair`
+
