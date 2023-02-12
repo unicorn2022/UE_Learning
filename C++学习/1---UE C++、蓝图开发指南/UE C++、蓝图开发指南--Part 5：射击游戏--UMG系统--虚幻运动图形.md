@@ -425,4 +425,110 @@
 
       <img src="AssetMarkdown/image-20230212232625622.png" alt="image-20230212232625622" style="zoom:80%;" />
 
-6. 
+# 六、重构，组装游戏
+
+1. 创建C++类`STUUtils`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public`
+
+2. 修改`STUUtils`：将两个component的getter合并为一个模板函数
+
+   ```c++
+   #pragma once
+   
+   class STUUtils {
+   public:
+       template<typename T>
+       static T* GetSTUPlayerComponent(APawn* PlayerPawn) {
+           if (!PlayerPawn) return nullptr;
+   
+           const auto Component = PlayerPawn->GetComponentByClass(T::StaticClass());
+           return Cast<T>(Component);
+       }
+   };
+   ```
+
+3. 修改`STUPlayerHUD`：使用STUUtils获取两个component
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUCoreTypes.h"
+   #include "STUPlayerHUDWidget.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+       GENERATED_BODY()
+   public:
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       float GetHealthPercent() const;
+   
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool GetCurrentWeaponUIData(FWeaponUIData& UIData) const;
+   
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool GetCurrentWeaponAmmoData(FAmmoData& AmmoData) const;
+   
+       // 玩家是否存活
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool IsPlayerAlive() const;
+   
+       // 玩家是否处于观察者模式
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool IsPlayerSpectating() const;
+   };
+   ```
+
+   ```c++
+   #include "UI/STUPlayerHUDWidget.h"
+   #include "Components/STUHealthComponent.h"
+   #include "Components/STUWeaponComponent.h"
+   #include "STUUtils.h"
+   
+   float USTUPlayerHUDWidget::GetHealthPercent() const {
+       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(GetOwningPlayerPawn());
+       if (!HealthComponent) return 0.0f;
+   
+       return HealthComponent->GetHealthPercent();
+   }
+   
+   bool USTUPlayerHUDWidget::GetCurrentWeaponUIData(FWeaponUIData& UIData) const {
+       const auto WeaponComponent = STUUtils::GetSTUPlayerComponent<USTUWeaponComponent>(GetOwningPlayerPawn());
+       if (!WeaponComponent) return false;
+   
+       return WeaponComponent->GetCurrentWeaponUIData(UIData);
+   }
+   
+   bool USTUPlayerHUDWidget::GetCurrentWeaponAmmoData(FAmmoData& AmmoData) const {
+       const auto WeaponComponent = STUUtils::GetSTUPlayerComponent<USTUWeaponComponent>(GetOwningPlayerPawn());
+       if (!WeaponComponent) return false;
+   
+       return WeaponComponent->GetCurrentWeaponAmmoData(AmmoData);
+   }
+   
+   // 玩家是否存活
+   bool USTUPlayerHUDWidget::IsPlayerAlive() const {
+       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(GetOwningPlayerPawn());
+       return HealthComponent && !HealthComponent->IsDead();
+   }
+   
+   // 玩家是否处于观察者模式
+   bool USTUPlayerHUDWidget::IsPlayerSpectating() const {
+       const auto Controller = GetOwningPlayer();
+       return Controller && Controller->GetStateName() == NAME_Spectating;
+   }
+
+4. 修改`STUBaseWeapon`：删除每次射击后调用LogAmmo()
+
+   ```c++
+   void ASTUBaseWeapon::DecreaseAmmo() {
+       CurrentAmmo.Bullets--;
+   
+       if (IsClipEmpty() && !IsAmmoEmpty()) ChangeClip();
+   }
+
+5. 修改`WBP_PlayerHUD`的命名：
+
+   <img src="AssetMarkdown/image-20230212234154832.png" alt="image-20230212234154832" style="zoom:80%;" />
