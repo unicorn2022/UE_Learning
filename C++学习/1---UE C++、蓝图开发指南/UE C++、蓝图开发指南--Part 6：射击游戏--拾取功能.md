@@ -223,3 +223,115 @@
    }
    ```
 
+# 三、拾取物功能--弹药
+
+1. 修改`STUAmmoPickup/GivePickupTo()`：
+
+   ```c++
+   class ASTUBaseWeapon;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUAmmoPickup : public ASTUBasePickup {
+       GENERATED_BODY()
+   
+   protected:
+       // 拾取物包含的弹夹数
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup", meta = (ClampMin = "1.0", ClampMax = "10.0"))
+       int32 ClipsAmount = 10;
+   
+       // 武器类型
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup")
+       TSubclassOf<ASTUBaseWeapon> WeaponType;
+   
+   private:
+       // 将拾取物给到角色, 用于修改角色属性
+       virtual bool GivePickupTo(APawn* PlayerPawn) override;
+   };
+   ```
+
+   ```c++
+   #include "Pickups/STUAmmoPickup.h"
+   #include "Components/STUHealthComponent.h"
+   #include "Components/STUWeaponComponent.h"
+   #include "STUUtils.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUAmmoPickup, All, All);
+   
+   bool ASTUAmmoPickup::GivePickupTo(APawn* PlayerPawn) {
+       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(PlayerPawn);
+       if (!HealthComponent || HealthComponent->IsDead()) return false;
+       
+       const auto WeaponComponent = STUUtils::GetSTUPlayerComponent<USTUWeaponComponent>(PlayerPawn);
+       if (!WeaponComponent) return false;
+       
+       return WeaponComponent->TryToAddAmmo(WeaponType, ClipsAmount);
+   }
+   ```
+
+2. 修改`STUWeaponComponent`：添加`TryToAddAmmo()`函数
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       ...
+   
+   public:
+       // 尝试添加弹药
+       bool TryToAddAmmo(TSubclassOf<ASTUBaseWeapon> WeaponType, int32 ClipsAmount);
+   };
+   ```
+
+   ```c++
+   bool USTUWeaponComponent::TryToAddAmmo(TSubclassOf<ASTUBaseWeapon> WeaponType, int32 ClipsAmount) {
+       for (const auto Weapon : Weapons) {
+           if (Weapon && Weapon->IsA(WeaponType)) {
+               return Weapon->TryToAddAmmo(ClipsAmount);
+           }
+       }
+       return false;
+   }
+
+3. 修改`STUBaseWeapon`：添加`TryToAddAmmo()`函数
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+       ...
+   
+   public:
+       // 尝试添加弹药
+       bool TryToAddAmmo(int32 ClipsAmount);
+       
+   protected:
+       // 判断弹药是否已满
+       bool IsAmmoFull() const;
+   };
+   
+   ```
+
+   ```c++
+   bool ASTUBaseWeapon::IsAmmoFull() const {
+       return CurrentAmmo.Clips == DefaultAmmo.Clips && CurrentAmmo.Bullets == DefaultAmmo.Bullets;
+   }
+   
+   bool ASTUBaseWeapon::TryToAddAmmo(int32 ClipsAmount) {
+       if (CurrentAmmo.Infinite || IsAmmoFull() || ClipsAmount <= 0) return false;
+   
+       const auto NextClipsAmount = CurrentAmmo.Clips + ClipsAmount;
+       // 拾取的弹药可以补全弹药库, 则全部补全
+       if(NextClipsAmount > DefaultAmmo.Clips){
+           UE_LOG(LogSTUBaseWeapon, Display, TEXT("补全弹夹&弹药"));
+           CurrentAmmo.Bullets = DefaultAmmo.Bullets;
+           CurrentAmmo.Clips = DefaultAmmo.Clips;
+       } 
+       // 拾取的弹药不能补全弹药库, 则优先补充弹夹
+       else {
+           UE_LOG(LogSTUBaseWeapon, Display, TEXT("补全弹夹"));
+           CurrentAmmo.Clips = NextClipsAmount;
+           // 如果当前弹夹里面没有子弹了, 则切换弹夹
+           if (CurrentAmmo.Bullets == 0) ChangeClip();
+       }
+       return true;
+   }
+
+4. 修改`BP_STUAmmoPickup`：将`WeaponType`设置为`BP_STULauncherWeapon`
