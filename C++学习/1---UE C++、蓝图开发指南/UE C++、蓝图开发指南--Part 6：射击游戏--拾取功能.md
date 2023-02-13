@@ -328,10 +328,130 @@
        else {
            UE_LOG(LogSTUBaseWeapon, Display, TEXT("补全弹夹"));
            CurrentAmmo.Clips = NextClipsAmount;
-           // 如果当前弹夹里面没有子弹了, 则切换弹夹
-           if (CurrentAmmo.Bullets == 0) ChangeClip();
        }
        return true;
    }
-
+   
 4. 修改`BP_STUAmmoPickup`：将`WeaponType`设置为`BP_STULauncherWeapon`
+
+# 四、当前子弹数为空时禁止发射，按R换弹后补充弹药库
+
+1. 修改`STUWeaponComponent/CanFire()`：防止弹夹为空后仍然开火
+
+   ```c++
+   bool USTUWeaponComponent::CanFire() const {
+       // 有武器 && 可以开火 && 没有在更换武器 && 没有在更换弹夹
+       return CurrentWeapon && CurrentWeapon->CanFire() && !EquipAnimInProgress && !ReloadAnimInProgress;
+   }
+
+2. 修改`STUWeaponComponent/OnReloadFinished()`：切换弹夹动画完成后，补充弹药
+
+   ```c++
+   void USTUWeaponComponent::OnReloadFinished(USkeletalMeshComponent* MeshComponent) {
+       // 不是当前Character, 则不响应该事件
+       ACharacter* Character = Cast<ACharacter>(GetOwner());
+       if (!Character || Character->GetMesh() != MeshComponent) return;
+   
+       ReloadAnimInProgress = false;
+       // 补充弹药
+       if (CurrentWeapon) CurrentWeapon->ChangeClip();
+   }
+   ```
+
+3. 修改`STURifleWeapon/MakeShot()`：弹夹为空后禁止开火
+
+   ```c++
+   void ASTURifleWeapon::MakeShot() {
+       // 判断当前弹夹是否为空
+       if (!GetWorld() || IsClipEmpty()) {
+           StopFire();
+           return;
+       }
+   
+       // 获取子弹的逻辑路径
+       FVector TraceStart, TraceEnd;
+       if (!GetTraceData(TraceStart, TraceEnd)) {
+           StopFire();
+           return;
+       }
+   
+       // 计算子弹的碰撞结果
+       FHitResult HitResult;
+       MakeHit(HitResult, TraceStart, TraceEnd);
+   
+       if (HitResult.bBlockingHit) {
+           // 对子弹击中的玩家进行伤害
+           MakeDamage(HitResult);
+   
+           // 绘制子弹的路径: 枪口位置 -> 碰撞点
+           DrawDebugLine(GetWorld(), GetMuzzleWorldLocation(), HitResult.ImpactPoint, FColor::Red, false, 3.0f, 0, 3.0f);
+           // 在碰撞处绘制一个球
+           DrawDebugSphere(GetWorld(), HitResult.ImpactPoint, 10.0f, 24, FColor::Red, false, 5.0f);
+   
+           // 显示碰撞到了哪个骨骼上, 可以通过这个信息对角色造成不同的伤害
+           UE_LOG(LogSTURifleWeapon, Display, TEXT("Fire hit bone: %s"), *HitResult.BoneName.ToString());
+       } else {
+           // 绘制子弹的路径: 枪口位置 -> 子弹路径的终点
+           DrawDebugLine(GetWorld(), GetMuzzleWorldLocation(), TraceEnd, FColor::Red, false, 3.0f, 0, 3.0f);
+       }
+   
+       // 减少弹药数
+       DecreaseAmmo();
+   }
+   ```
+
+4. 修改`STULauncherWeapon/MakeShot()`：弹夹为空后禁止开火
+
+   ```c++
+   void ASTULauncherWeapon::MakeShot() {
+       // 判断当前弹夹是否为空
+       if (!GetWorld() || IsClipEmpty()) return;
+   
+       // 获取榴弹的逻辑路径
+       FVector TraceStart, TraceEnd;
+       if (!GetTraceData(TraceStart, TraceEnd)) return;
+   
+       // 计算榴弹的碰撞结果
+       FHitResult HitResult;
+       MakeHit(HitResult, TraceStart, TraceEnd);
+   
+       // 判断榴弹的落点
+       const FVector EndPoint = HitResult.bBlockingHit ? HitResult.ImpactPoint : TraceEnd;
+       // 计算榴弹的射击方向(单位向量)
+       const FVector Direction = (EndPoint - GetMuzzleWorldLocation()).GetSafeNormal();
+   
+       // 榴弹的初始位置
+       const FTransform SpawnTransform(FRotator::ZeroRotator, GetMuzzleWorldLocation());
+       // 在场景中延迟创建一个榴弹
+       ASTUProjectile* Projectile = GetWorld()->SpawnActorDeferred<ASTUProjectile>(ProjectileClass, SpawnTransform);
+       if (Projectile) {
+           // 设置榴弹的参数
+           Projectile->SetShotDirection(Direction);
+           Projectile->SetOwner(GetOwner());
+           // 完成榴弹的创建
+           Projectile->FinishSpawning(SpawnTransform);
+       }
+   
+       // 减少弹药数
+       DecreaseAmmo();
+   }
+   ```
+
+5. 修改`STUBaseWeapon/DecreaseAmmo()、ChangeClip()`：减小弹药时不自动换弹夹
+
+   ```c++
+   void ASTUBaseWeapon::DecreaseAmmo() {
+       CurrentAmmo.Bullets--;
+   }
+   
+   void ASTUBaseWeapon::ChangeClip() {
+       // 没有剩余弹药, 则直接返回
+       if (IsAmmoEmpty()) return;
+   
+       // 更换弹夹, 并减少弹夹数
+       CurrentAmmo.Bullets = DefaultAmmo.Bullets;
+       if (!CurrentAmmo.Infinite) CurrentAmmo.Clips--;
+       UE_LOG(LogSTUBaseWeapon, Display, TEXT("------ Change Clip ------"));
+   }
+   ```
+
