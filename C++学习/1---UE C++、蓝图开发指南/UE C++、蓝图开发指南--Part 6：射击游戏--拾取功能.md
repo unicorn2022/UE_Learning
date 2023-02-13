@@ -510,3 +510,48 @@
        return FMath::IsNearlyEqual(Health, MaxHealth);
    }
 
+# 六、拾取物绕Z轴旋转
+
+1. 修改`STUBasePickup`：
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBasePickup : public AActor {
+       ...
+   
+   private:
+       // 绕Z轴旋转速度
+       float RotationYaw = 0.0f;
+       // 随机生成一个旋转速度
+       void GenerateRotationYaw();
+   };
+   ```
+
+   ```c++
+   void ASTUBasePickup::BeginPlay() {
+       Super::BeginPlay();
+   
+       check(CollisionComponent);
+   
+       GenerateRotationYaw();
+   }
+   
+   void ASTUBasePickup::Tick(float DeltaTime) {
+       Super::Tick(DeltaTime);
+       AddActorLocalRotation(FRotator(0.0f, RotationYaw, 0.0f));
+   }
+   
+   void ASTUBasePickup::Respawn() {
+       GenerateRotationYaw();
+       // 开启Actor的碰撞响应
+       CollisionComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Overlap);
+   
+       // 将Actor设为可见
+       if (GetRootComponent()) GetRootComponent()->SetVisibility(true, true);
+   }
+   
+   void ASTUBasePickup::GenerateRotationYaw() {
+       const auto Direction = FMath::RandBool() ? 1.0f : -1.0f;
+       RotationYaw = FMath::RandRange(1.0f, 2.0f) * Direction;
+   }
+
