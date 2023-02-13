@@ -250,24 +250,19 @@
    ```
 
    ```c++
-   #include "Pickups/STUAmmoPickup.h"
-   #include "Components/STUHealthComponent.h"
    #include "Components/STUWeaponComponent.h"
    #include "STUUtils.h"
    
    DEFINE_LOG_CATEGORY_STATIC(LogSTUAmmoPickup, All, All);
    
-   bool ASTUAmmoPickup::GivePickupTo(APawn* PlayerPawn) {
-       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(PlayerPawn);
-       if (!HealthComponent || HealthComponent->IsDead()) return false;
-       
+   bool ASTUAmmoPickup::GivePickupTo(APawn* PlayerPawn) {    
        const auto WeaponComponent = STUUtils::GetSTUPlayerComponent<USTUWeaponComponent>(PlayerPawn);
        if (!WeaponComponent) return false;
        
        return WeaponComponent->TryToAddAmmo(WeaponType, ClipsAmount);
    }
    ```
-
+   
 2. 修改`STUWeaponComponent`：添加`TryToAddAmmo()`函数
 
    ```c++
@@ -454,4 +449,64 @@
        UE_LOG(LogSTUBaseWeapon, Display, TEXT("------ Change Clip ------"));
    }
    ```
+
+# 五、实战作业：拾取物功能--回血
+
+1. 修改`STUHealthPichup/GivePickupTo()`：
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUHealthPickup : public ASTUBasePickup {
+       GENERATED_BODY()
+   
+   protected:
+       // 拾取物恢复的血量
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup", meta = (ClampMin = "1.0", ClampMax = "100.0"))
+       int32 HealthAmount = 50.0f;
+   
+   private:
+       // 将拾取物给到角色, 用于修改角色属性
+       virtual bool GivePickupTo(APawn* PlayerPawn) override;
+   };
+   ```
+
+   ```c++
+   #include "Components/STUHealthComponent.h"
+   #include "STUUtils.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUHealthPickup, All, All);
+   
+   bool ASTUHealthPickup::GivePickupTo(APawn* PlayerPawn) {
+       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(PlayerPawn);
+       if (!HealthComponent || HealthComponent->IsDead()) return false;
+   
+       return HealthComponent->TryToAddHealth(HealthAmount);
+   }
+
+2. 修改`STUHealthComponent`：添加`TryToAddHealth()`函数
+
+   ```c++
+   UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
+   class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent{
+   
+   public:	
+       // 尝试增加血量
+       bool TryToAddHealth(float HealthAmount);
+       // 判断角色当前血量是否已满
+       bool IsHealthFull() const;
+   };
+   ```
+
+   ```c++
+   bool USTUHealthComponent::TryToAddHealth(float HealthAmount) {
+       // 角色已死亡、血量已满，均不可回血
+       if (IsDead() || IsHealthFull()) return false;
+       
+       SetHealth(Health + HealthAmount);
+       return true;
+   }
+   
+   bool USTUHealthComponent::IsHealthFull() const {
+       return FMath::IsNearlyEqual(Health, MaxHealth);
+   }
 
