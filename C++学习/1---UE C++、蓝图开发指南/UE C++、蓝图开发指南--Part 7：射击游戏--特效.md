@@ -514,4 +514,68 @@
    }
    ```
 
+# 六、相机抖动
+
+1. 创建蓝图类`BP_DamageCameraShake`，继承于`MainteeCameraShake`，并进行相应的参数设置
+
+   1. 路径：`VFX`
+
+2. 修改`STUHealthComponent`：当血量降低时，相机抖动
+
+   ```c++
+   class UCameraShakeBase;
    
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent {
+   	...
+   protected:
+       // 相机抖动
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Heal", meta = (EditCondition = "AutoHeal"))
+       TSubclassOf<UCameraShakeBase> CameraShake;
+   
+   private:
+       // 相机抖动
+       void PlayCameraShake();
+   };
+   ```
+
+   ```c++
+   #include "GameFramework/Actor.h"
+   #include "GameFramework/Pawn.h"
+   #include "GameFramework/Controller.h"
+   #include "Camera/CameraShakeBase.h"
+   
+   void USTUHealthComponent::OnTakeAnyDamageHandler(
+       AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser) {
+       if (Damage <= 0.0f || IsDead() || !GetWorld()) return;
+   
+       SetHealth(Health - Damage);
+   
+       // 角色受伤时, 停止自动恢复
+       GetWorld()->GetTimerManager().ClearTimer(HealTimerHandle);
+       
+       // 角色死亡后, 广播OnDeath委托
+       if (IsDead()) OnDeath.Broadcast();
+       // 角色未死亡且可以自动恢复
+       else if (AutoHeal) {
+           GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, this, &USTUHealthComponent::HealUpdate, HealUpdateTime, true, HealDelay);
+       }
+   
+       // 相机抖动
+       PlayCameraShake();
+   }
+   
+   void USTUHealthComponent::PlayCameraShake() {
+       if (IsDead()) return;
+   
+       const auto Player = Cast<APawn>(GetOwner());
+       if (!Player) return;
+   
+       const auto Controller = Player->GetController<APlayerController>();
+       if (!Controller || !Controller->PlayerCameraManager) return;
+   
+       Controller->PlayerCameraManager->StartCameraShake(CameraShake);
+   }
+
+3. 修改`BP_STUBaseCharacter`：将`CameraShake`赋值为`BP_DamageCameraShake`
+
