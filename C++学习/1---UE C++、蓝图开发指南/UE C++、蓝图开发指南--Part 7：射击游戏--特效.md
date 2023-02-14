@@ -673,3 +673,137 @@
    1. 添加组件`Camera`
    2. 勾选`使用Pawn控制旋转`
    3. 将`后期处理/Color Grading/饱和度/Y`设为0
+
+# 九、枪口闪光效果
+
+1. 将`NE_LauncherFlash`迁移到本项目
+
+2. 基于`NE_LauncherFlash`创建Niagara系统`NS_LauncherMuzzle、NS_RiffleMuzzle`
+
+   1. `NS_LauncherMuzzle`：
+      1. `发射器更新/Emitter State/Loop Behavior`设为`Once`
+   2. `NS_RifleMuzzle`
+      1. `发射器更新/Spawn Rate`设为`90`
+      2. `发射器更新/Emitter State/Loop Behavior`设为`Infinite`
+      3. `粒子生成/Initialize Particle`的颜色设为`黄色`
+
+3. 修改`STUBaseWeapon`：添加`NiagaraSystem`组件
+
+   ```c++
+   class UNiagaraSystem;
+   class UNiagaraComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseWeapon : public AActor {
+       ...
+   
+   protected:
+       // 枪口特效
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       UNiagaraSystem* MuzzleFX;
+       
+   protected:
+       // 生成枪口特效
+       UNiagaraComponent* SpawnMuzzleFX();
+   };
+   ```
+
+   ```c++
+   UNiagaraComponent* ASTUBaseWeapon::SpawnMuzzleFX() {
+       return UNiagaraFunctionLibrary::SpawnSystemAttached(
+           MuzzleFX,
+           WeaponMesh,
+           MuzzleSocketName,
+           FVector::ZeroVector,
+           FRotator::ZeroRotator,
+           EAttachLocation::SnapToTarget, true);
+   }
+
+4. 修改`STULauncherWeapon/MakeShot()`：射击时，创建特效系统，特效会自动删除
+
+   ```c++
+   void ASTULauncherWeapon::MakeShot() {
+       // 判断当前弹夹是否为空
+       if (!GetWorld() || IsClipEmpty()) return;
+   
+       // 获取榴弹的逻辑路径
+       FVector TraceStart, TraceEnd;
+       if (!GetTraceData(TraceStart, TraceEnd)) return;
+   
+       // 计算榴弹的碰撞结果
+       FHitResult HitResult;
+       MakeHit(HitResult, TraceStart, TraceEnd);
+   
+       // 判断榴弹的落点
+       const FVector EndPoint = HitResult.bBlockingHit ? HitResult.ImpactPoint : TraceEnd;
+       // 计算榴弹的射击方向(单位向量)
+       const FVector Direction = (EndPoint - GetMuzzleWorldLocation()).GetSafeNormal();
+   
+       // 榴弹的初始位置
+       const FTransform SpawnTransform(FRotator::ZeroRotator, GetMuzzleWorldLocation());
+       // 在场景中延迟创建一个榴弹
+       ASTUProjectile* Projectile = GetWorld()->SpawnActorDeferred<ASTUProjectile>(ProjectileClass, SpawnTransform);
+       if (Projectile) {
+           // 设置榴弹的参数
+           Projectile->SetShotDirection(Direction);
+           Projectile->SetOwner(GetOwner());
+           // 完成榴弹的创建
+           Projectile->FinishSpawning(SpawnTransform);
+       }
+   
+       // 减少弹药数
+       DecreaseAmmo();
+   
+       // 生成枪口特效系统, 由于该特效生成一次后就销毁, 因此我们并不需要其指针
+       SpawnMuzzleFX();
+   }
+
+5. 修改`STURifleWeapon`：当开始射击时，将特效设为可见；停止射击时，将特效设为不可见
+
+   ```c++
+   class UNiagaraComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTURifleWeapon : public ASTUBaseWeapon {
+       
+   private:
+       // 枪口特效组件
+       UPROPERTY()
+       UNiagaraComponent* MuzzleFXComponent;
+   
+   private:
+       // 初始化枪口特效组件
+       void InitMuzzleFX();
+       // 设置特效的可见性
+       void SetMuzzleFXVisibility(bool Visible);
+   };
+   ```
+
+   ```c++
+   #include "NiagaraComponent.h"
+   
+   void ASTURifleWeapon::StartFire() {
+       MakeShot();
+       GetWorldTimerManager().SetTimer(ShotTimerHandle, this, &ASTURifleWeapon::MakeShot, TimeBetweenShots, true);
+       InitMuzzleFX();
+   }
+   
+   void ASTURifleWeapon::StopFire() {
+       GetWorldTimerManager().ClearTimer(ShotTimerHandle);
+       SetMuzzleFXVisibility(false);
+   }
+   
+   void ASTURifleWeapon::InitMuzzleFX() {
+       if (!MuzzleFXComponent) {
+           MuzzleFXComponent = SpawnMuzzleFX();
+       }
+       SetMuzzleFXVisibility(true);
+   }
+   
+   void ASTURifleWeapon::SetMuzzleFXVisibility(bool Visible) {
+       if (MuzzleFXComponent) {
+           MuzzleFXComponent->SetPaused(!Visible);
+           MuzzleFXComponent->SetVisibility(Visible);
+       }
+   }
+
