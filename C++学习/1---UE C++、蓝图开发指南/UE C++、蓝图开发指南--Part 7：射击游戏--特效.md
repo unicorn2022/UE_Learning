@@ -902,3 +902,13 @@
    3. 添加点光源组件`PointLight`，并将光源颜色设置为与材质相同的颜色
    4. 此时我们的榴弹不仅会爆炸，还会照亮路径
 
+# 十一、重构，打包项目
+
+1. 将`VFX`文件夹迁移到本项目
+2. 修改`BP_STUProjectile`：
+   1. 将Default Impact Data设置为`NS_ProjectileExplosion`
+3. 修改`BP_STURifleWeapon`：
+   1. 将Default Impact Data设置为`NS_RifleDefaultImpact`
+   2. 将Ground对应的设置为`NS_RifleGroundImpact`
+   3. 将Body对应的设置为`NS_RifleBodyImpact`
+   4. 将Head对应的设置为`NS_RifleHeadImpact`
