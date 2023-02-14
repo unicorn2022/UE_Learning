@@ -24,7 +24,7 @@
 
    1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Weapon/Components`
 
-2. 在`ShootThemUp.Build.cs`中更新路径
+2. 在`ShootThemUp.Build.cs`中更新路径、添加模块的引用
 
    ```c#
    PublicDependencyModuleNames.AddRange(new string[] { 
@@ -222,3 +222,132 @@
 
    1. 将`Add Velocity in Cone`的`Cone Axis`修改为`(1,0,0)`
    2. 从而让粒子沿碰撞点的法线方向的X轴生成
+
+# 三、物理材质、不同击中特效
+
+> 根据击中的东西，生成不同的特效
+
+1. 将`NS_BaseImpact`更名为`NS_DefaultImpact`，当无法确认击中的物体时，就使用该特效
+
+   1. 粒子颜色：白
+
+2. 将`NS_DefaultImpact`复制三份，分别命名为`NS_BodyImpact、NS_HeadImpact、NS_GroundImpact`
+
+   1. 粒子颜色分别为：红、暗红、绿
+
+3. 创建文件夹`PhysMaterials`，用于存放物理材料
+
+4. 创建物理材质`PhysMat_Ground、PhysMat_Body、PhysMat_Head`
+
+5. 修改角色的物理材质：
+
+   1. 将头部的碰撞体的物理材质设置为`PhysMat_Head`
+   2. 其他的均为`PhysMat_Body`
+
+6. 在`ShootThemUp.Build.cs`中添加模块的引用
+
+   ```c++
+   PublicDependencyModuleNames.AddRange(new string[] { 
+       "Core", 
+       "CoreUObject", 
+       "Engine", 
+       "InputCore",
+       "Niagara",
+       "PhysicsCore"
+   });
+   ```
+
+7. 修改`STUWeaponFXComponent`
+
+   ```c++
+   class UNiagaraSystem;
+   class UPhysicalMaterial;
+   
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponFXComponent : public UActorComponent {
+       GENERATED_BODY()
+   
+   public:
+       USTUWeaponFXComponent();
+   
+       void PlayImpactFX(const FHitResult& Hit);
+   
+   protected:
+       // 默认特效
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       UNiagaraSystem* DefaultEffect;
+       
+       // 不同物理材质对应不同特效
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       TMap<UPhysicalMaterial*, UNiagaraSystem*> EffectsMap;
+   };
+   ```
+
+   ```c++
+   #include "Weapon/Components/STUWeaponFXComponent.h"
+   #include "NiagaraFunctionLibrary.h"
+   #include "PhysicalMaterials/PhysicalMaterial.h"
+   
+   USTUWeaponFXComponent::USTUWeaponFXComponent() {
+       PrimaryComponentTick.bCanEverTick = false;
+   }
+   
+   void USTUWeaponFXComponent::PlayImpactFX(const FHitResult& Hit) {
+       auto Effect = DefaultEffect;
+   
+       if (Hit.PhysMaterial.IsValid()) {
+           const auto PhysMat = Hit.PhysMaterial.Get();
+           if (EffectsMap.Contains(PhysMat)) {
+               Effect = EffectsMap[PhysMat];
+           }
+       }
+   
+       UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Effect, Hit.ImpactPoint, Hit.ImpactNormal.Rotation());
+   }
+   ```
+
+8. 修改`STUBaseWeapon/MakeHit()`：碰撞时传递物理材质
+
+   ```c++
+   void ASTUBaseWeapon::MakeHit(FHitResult& HitResult, const FVector& TraceStart, const FVector& TraceEnd) const {
+       if (!GetWorld()) return;
+   
+       // 忽略自己
+       FCollisionQueryParams CollisionParams;
+       CollisionParams.AddIgnoredActor(GetOwner());
+       CollisionParams.bReturnPhysicalMaterial = true;
+   
+       // 获取子弹路径上，第一个碰撞到的对象，存储到HitResult中
+       GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_Visibility, CollisionParams);
+   }
+
+9. 修改`STUProjectile/ASTUProjectile()`：碰撞时传递物理材质
+
+   ```c++
+   ASTUProjectile::ASTUProjectile() {
+       PrimaryActorTick.bCanEverTick = false;
+   
+       // 创建球形碰撞体组件
+       CollisionComponent = CreateDefaultSubobject<USphereComponent>("SphereComponent");
+       CollisionComponent->InitSphereRadius(5.0f);
+       CollisionComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+       CollisionComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);
+       CollisionComponent->bReturnMaterialOnMove = true;
+       SetRootComponent(CollisionComponent);
+   
+       // 创建子弹运动组件
+       MovementComponent = CreateDefaultSubobject<UProjectileMovementComponent>("ProjectileMovementComponent");
+       MovementComponent->InitialSpeed = 2000.0f;
+       MovementComponent->ProjectileGravityScale = 0.0f;
+   
+       // 创建特效组件
+       WeaponFXComponent = CreateDefaultSubobject<USTUWeaponFXComponent>("WeaponFXComponent");
+   }
+
+10. 修改`BP_STURifleWeapon`：为`DefaultEffect`和`EffectsMap`赋值
+
+11. 创建新的Niagara系统`NS_ProjectileImpact`，基于模板Simple Explosion
+
+    1. 将粒子生成的初始速度`Add Velocity from Point`从Z轴速度换为X轴速度
+
+12. 修改`BP_STULauncherWeapon`：将`DefaultEffect`设置为`NS_ProjectileImpact`
