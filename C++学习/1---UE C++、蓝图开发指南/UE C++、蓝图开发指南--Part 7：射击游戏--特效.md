@@ -351,3 +351,132 @@
     1. 将粒子生成的初始速度`Add Velocity from Point`从Z轴速度换为X轴速度
 
 12. 修改`BP_STULauncherWeapon`：将`DefaultEffect`设置为`NS_ProjectileImpact`
+
+# 四、贴花
+
+1. 将`Dev`文件夹迁移到工程中
+
+2. 创建贴花材质：基于`UnrealLogo`纹理，创建材质，重命名为`M_TestDecal`
+
+   1. `材质域`选为`延迟贴花`
+   2. `混合模式`选为`半透明`
+   3. 将alpha通道与`不透明度`相连
+
+3. 从`放置Actor`中，拖取`视觉效果/贴花`到场景中
+
+   1. `贴画材质`选为`M_Impact_Decal`
+
+4. 修改`STUCoreTypes.h`：添加贴花相关的结构体
+
+   ```c++
+   /* 特效 */
+   
+   class UNiagaraSystem;
+   
+   USTRUCT(BlueprintType)
+   struct FDecalData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 贴花材质
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       UMaterialInterface* Material;
+   
+       // 贴花的大小
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       FVector Size = FVector(10.0f);
+   
+       // 贴花停留的时间
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       float LifeTime = 5.0f;
+   
+       // 贴花淡出的时间
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       float FadeOutTime = 0.7f;
+   };
+   
+   USTRUCT(BlueprintType)
+   struct FImpactData {
+       GENERATED_USTRUCT_BODY()
+   
+       // Niagara特效
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       UNiagaraSystem* NiagaraEffect;
+   
+       // 贴花数据
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       FDecalData DecalData;
+   };
+
+5. 修改`STUWeaponFXComponent`：添加贴花效果
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Components/ActorComponent.h"
+   #include "STUCoreTypes.h"
+   #include "STUWeaponFXComponent.generated.h"
+   
+   class UNiagaraSystem;
+   class UPhysicalMaterial;
+   
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponFXComponent : public UActorComponent {
+       GENERATED_BODY()
+   
+   public:
+       USTUWeaponFXComponent();
+   
+       void PlayImpactFX(const FHitResult& Hit);
+   
+   protected:
+       // 默认特效
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       FImpactData DefaultImpactData;
+       
+       // 不同物理材质对应不同特效
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       TMap<UPhysicalMaterial*, FImpactData> ImpactDataMap;
+   };
+   ```
+
+   ```c++
+   #include "Weapon/Components/STUWeaponFXComponent.h"
+   #include "NiagaraFunctionLibrary.h"
+   #include "PhysicalMaterials/PhysicalMaterial.h"
+   #include "Kismet/GameplayStatics.h"
+   #include "Components/DecalComponent.h"
+   
+   USTUWeaponFXComponent::USTUWeaponFXComponent() {
+       PrimaryComponentTick.bCanEverTick = false;
+   }
+   
+   void USTUWeaponFXComponent::PlayImpactFX(const FHitResult& Hit) {
+       auto ImpactData = DefaultImpactData;
+   
+       if (Hit.PhysMaterial.IsValid()) {
+           const auto PhysMat = Hit.PhysMaterial.Get();
+           if (ImpactDataMap.Contains(PhysMat)) {
+               ImpactData = ImpactDataMap[PhysMat];
+           }
+       }
+   
+       // 生成Niagara系统
+       UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(),
+           ImpactData.NiagaraEffect,      // Niagara系统
+           Hit.ImpactPoint,               // 位置
+           Hit.ImpactNormal.Rotation());  // 旋转
+   
+       // 生成贴花
+       auto DecalComponent = UGameplayStatics::SpawnDecalAtLocation(GetWorld(),
+           ImpactData.DecalData.Material,  // 贴花材质
+           ImpactData.DecalData.Size,      // 贴花大小
+           Hit.ImpactPoint,                // 位置
+           Hit.ImpactNormal.Rotation());   // 旋转
+       // 一段时间后淡出
+       if (DecalComponent) {
+           DecalComponent->SetFadeOut(ImpactData.DecalData.LifeTime, ImpactData.DecalData.FadeOutTime);
+       }
+   }
+
+6. 修改`BP_STURifleWeapon、BP_STUProjectile`：为`ImpactData`赋值
