@@ -480,3 +480,38 @@
    }
 
 6. 修改`BP_STURifleWeapon、BP_STUProjectile`：为`ImpactData`赋值
+
+# 五、用角色身体的物理模拟代替死亡动画
+
+1. 修改`STUBaseCharacter/OnDeath()`：
+
+   ```c++
+   void ASTUBaseCharacter::OnDeath() {
+       UE_LOG(LogSTUBaseCharacter, Warning, TEXT("Player %s is dead"), *GetName());
+       // 播放死亡动画蒙太奇
+       // PlayAnimMontage(DeathAnimMontage);
+       
+       // 禁止角色的移动
+       GetCharacterMovement()->DisableMovement();
+       
+       // 一段时间后摧毁角色
+       SetLifeSpan(LifeSpanOnDeath);
+       
+       // 切换状态, 从而将pawn切换为观察者类
+       if (Controller) {
+           Controller->ChangeState(NAME_Spectating);
+       }
+   
+       // 禁止胶囊体碰撞
+       GetCapsuleComponent()->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
+       
+       // 停止武器组件的开火
+       WeaponComponent->StopFire();
+   
+       // 启用物理模拟, 实现角色死亡效果
+       GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+       GetMesh()->SetSimulatePhysics(true);
+   }
+   ```
+
+   
