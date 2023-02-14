@@ -579,3 +579,97 @@
 
 3. 修改`BP_STUBaseCharacter`：将`CameraShake`赋值为`BP_DamageCameraShake`
 
+# 七、受伤时屏幕闪烁
+
+1. 修改`STUCoreTypes.h`：将`FOnHealthChange`事件的参数设置为2个
+
+   ```c++
+   /* 血量 */
+   DECLARE_MULTICAST_DELEGATE(FOnDeath);
+   DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHealthChanged, float, float);
+   ```
+
+2. 修改`STUHealthComponent/SetHealth()`：
+
+   ```c++
+   void USTUHealthComponent::SetHealth(float NewHealth) {
+       // 保证Health在合理的范围内
+       const auto NextHealth = FMath::Clamp(NewHealth, 0.0f, MaxHealth);
+       const auto HealthDelta = NextHealth - Health;
+       Health = NextHealth;
+   
+       // 广播OnHealthChanged委托
+       OnHealthChanged.Broadcast(Health, HealthDelta);
+   }
+   ```
+
+3. 修改`STUBaseCharacter/OnHealthChanged()`：
+
+   ```c++
+   void ASTUBaseCharacter::OnHealthChanged(float Health, float HealthDelta) {
+       // 获取角色当前血量并显示
+       const FString HealthString = FString::Printf(TEXT("%.0f"), Health);
+       HealthTextComponent->SetText(FText::FromString(HealthString));
+   }
+   ```
+
+4. 修改`STUPlayerHUDWidget`：订阅`OnHealthChanged`事件
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+       ...
+   public:
+       // 玩家受到伤害(蓝图中实现)
+       UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+       void OnTakeDamage();
+   
+       virtual bool Initialize() override;
+   
+   private:
+       // 玩家血量变化时
+       void OnHealthChanged(float Health, float HealthDelta);
+   };
+   ```
+
+   ```c++
+   bool USTUPlayerHUDWidget::Initialize() {
+       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(GetOwningPlayerPawn());
+       if (HealthComponent) {
+           HealthComponent->OnHealthChanged.AddUObject(this, &USTUPlayerHUDWidget::OnHealthChanged);
+       }
+       return Super::Initialize();
+   }
+   
+   // 玩家血量变化时
+   void USTUPlayerHUDWidget::OnHealthChanged(float Health, float HealthDelta) {
+       // 血量变化值 < 0, 受到伤害
+       if (HealthDelta < 0.0f) OnTakeDamage();
+   }
+   ```
+
+5. 修改`WBP_PlayerHUD`：
+
+   1. 添加图像控件`DamageImage`：作为画布面板的第一个子控件
+
+      1. 将`颜色和不透明度`里的`A`设为0
+
+      <img src="AssetMarkdown/image-20230214214719077.png" alt="image-20230214214719077" style="zoom:80%;" />
+
+   2. 在`DamageImage`控件上创建控件动画`DamageAnimation`：
+
+      <img src="AssetMarkdown/image-20230214212723027.png" alt="image-20230214212723027" style="zoom:80%;" />
+
+   3. 修改事件图表
+
+      <img src="AssetMarkdown/image-20230214214614526.png" alt="image-20230214214614526" style="zoom:80%;" />
+
+# 八、观察者模式下，相机变为黑白
+
+1. 创建蓝图类`BP_STUSpectatorPawn`，继承于`SpectatorPawn`
+   1. 路径：`Player`
+2. 在世界场景设置中，将旁观者类设置为`BP_STUSpectatorPawn`
+3. 修改`BP_STUSpectatorPawn`
+   1. 添加组件`Camera`
+   2. 勾选`使用Pawn控制旋转`
+   3. 将`后期处理/Color Grading/饱和度/Y`设为0
