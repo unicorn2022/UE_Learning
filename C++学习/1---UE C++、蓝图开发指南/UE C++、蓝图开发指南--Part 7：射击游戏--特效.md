@@ -807,3 +807,98 @@
        }
    }
 
+# 十、子弹路径特效
+
+1. 将`VFX/Trace`迁移到本工程
+
+2. 从头创建步枪子弹特效系统`NS_RifleBeam`：
+
+   1. 创建Niagara发射器`NE_TestBeam`，基于模板`Dynamic Beam`
+      1. 在`发射器更新/Beam Emitter Setup`中，可以修改`Beam End`，进而控制轨迹长度
+      2. 勾选`发射器更新/Beam Emitter Setup/Absoluute Beam End`
+   2. 基于`NE_TestBeam`创建Niagara系统`NS_RifleBeam`
+      1. 在`参数/用户公开`中，新建向量型变量`TraceTarget`
+      2. 将`发射器更新/Beam Emitter Setup/Beam End`绑定为`TraceTarget`
+      3. 将`发射器更新/Emitter State/Loop Behavior`设置为`Once`
+
+3. 修改`STURifleWeapon`：射击时生成子弹路径特效
+
+   ```c++
+   class UniagaraSystem;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTURifleWeapon : public ASTUBaseWeapon {
+       ...
+   protected:
+       // 子弹路径特效系统
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       UNiagaraSystem* TraceFX;
+       // 子弹路径特效系统中的参数名称
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       FString TraceTargetName = "TraceTarget";
+       
+   private:
+       // 生成子弹路径特效
+       void SpawnTraceFX(const FVector& TraceStart, const FVector& TraceEnd);
+   };
+   ```
+
+   ```c++
+   void ASTURifleWeapon::MakeShot() {
+       // 判断当前弹夹是否为空
+       if (!GetWorld() || IsClipEmpty()) {
+           StopFire();
+           return;
+       }
+   
+       // 获取子弹的逻辑路径
+       FVector TraceStart, TraceEnd;
+       if (!GetTraceData(TraceStart, TraceEnd)) {
+           StopFire();
+           return;
+       }
+   
+       // 计算子弹的碰撞结果
+       FHitResult HitResult;
+       MakeHit(HitResult, TraceStart, TraceEnd);
+   
+       FVector TraceFXStart = GetMuzzleWorldLocation(), TraceFXEnd = TraceEnd;
+       if (HitResult.bBlockingHit) {
+           // 对子弹击中的玩家进行伤害
+           MakeDamage(HitResult);
+           
+           // 击中时, 子弹路径为: 枪口位置 -> 碰撞点
+           TraceFXEnd = HitResult.ImpactPoint;
+           
+           // 播放击中特效
+           WeaponFXComponent->PlayImpactFX(HitResult);
+       }
+   
+       // 减少弹药数
+       DecreaseAmmo();
+   
+       // 生成子弹路径特效
+       SpawnTraceFX(TraceFXStart, TraceFXEnd);
+   }
+   
+   void ASTURifleWeapon::SpawnTraceFX(const FVector& TraceStart, const FVector& TraceEnd) {
+       const auto TraceFXComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), TraceFX, TraceStart);
+   
+       if (TraceFXComponent) {
+           // DrawDebugLine(GetWorld(), TraceStart, TraceEnd, FColor::Red, false, 3.0f, 0, 3.0f);
+           TraceFXComponent->SetNiagaraVariableVec3(TraceTargetName, TraceEnd);
+       }
+   }
+
+4. 在`NS_RifleBeam`中添加发射器`NE_RifleBeam`，并禁用`NE_TestBeam`
+
+   1. 将`发射器更新/Beam Emitter Setup/Beam End`绑定为`TraceTarget`
+   2. 将`发射器更新/Emitter State/Loop Behavior`设置为`Once`
+
+5. 修改`BP_STUProjectile`：
+
+   1. 添加Niagara粒子系统组件`TraceFX`，`Niagara系统资产`设置为`NS_ProjectileTrace`
+   2. 将`Sphere`组件的材质设置为`MI_ProjectileGlow`
+   3. 添加点光源组件`PointLight`，并将光源颜色设置为与材质相同的颜色
+   4. 此时我们的榴弹不仅会爆炸，还会照亮路径
+
