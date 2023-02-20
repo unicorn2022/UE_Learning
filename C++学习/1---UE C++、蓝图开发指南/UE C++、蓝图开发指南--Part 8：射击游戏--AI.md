@@ -2,6 +2,9 @@
 
 [TOC]
 
+> 1. 在场景中，点击`P`键，可以显示导航体积覆盖的地方
+> 2. 在运行时，点击`'`键，可以显示AI相关的调试信息
+
 # 一、AI控制角色简单移动
 
 1. 创建C++类`STUAICharacter`，继承于`STUBaseCharacter`
@@ -54,7 +57,6 @@
 
    1. NPC将在该体积内进行移动
    2. 修改该体积的大小，让其覆盖整个场景
-   3. 在场景中点击`P`键，可以显示导航体积覆盖的地方
 
 10. 修改`STUAICharacter`：将之前在`BP_STUAICharacter`中的设置设为类默认值
 
@@ -85,5 +87,31 @@
     }
     ```
 
-    
+# 二、AI行为树：控制角色简单移动
 
+1. 创建人工智能/行为树`BT_STUCharacter`，人工智能/黑板`BB_STUCharacter`
+
+   1. 路径：`AI`
+   2. `行为树`是AI的大脑，负责控制AI的行动逻辑
+   3. `黑板`是一个数据库，我们可以在代码的不同部分修改其值，在行为树中对这些变量的更改做出响应
+
+2. 修改`BB_STUCharacter`：添加两个变量`Location1、Location2`
+
+   <img src="AssetMarkdown/image-20230220212447133.png" alt="image-20230220212447133" style="zoom:80%;" />
+
+3. 修改`BT_STUCharacter`：让AI移动到Location1，然后等待2s，然后移动到Location2，然后等待2s
+
+   1. 添加序列
+   2. 添加事件`MoveTo`，修改`细节/黑板/黑板键`为`Location1`
+   3. 添加事件`Wait`，修改`细节/等待/等待时间`为`2s`
+   4. 添加事件`MoveTo`，修改`细节/黑板/黑板键`为`Location2`
+   5. 添加事件`Wait`，修改`细节/等待/等待时间`为`2s`
+   6. 行为树从上到下，从左到右按顺序执行，如果有一个事件无法执行，则终止执行序列
+
+   <img src="AssetMarkdown/image-20230220213038007.png" alt="image-20230220213038007" style="zoom:80%;" />
+
+4. 修改`BP_STUAIController`
+
+   <img src="AssetMarkdown/image-20230220214140495.png" alt="image-20230220214140495" style="zoom:80%;" />
+
+5. 
