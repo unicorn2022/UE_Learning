@@ -114,4 +114,109 @@
 
    <img src="AssetMarkdown/image-20230220214140495.png" alt="image-20230220214140495" style="zoom:80%;" />
 
-5. 
+# 三、自定义任务：将AI角色移动到场景中的任意一点
+
+1. 创建C++类`STUNextLocationTask`，继承于`BTTaskNode`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/AI/Tasks`
+
+2. 在`ShootThemUp.Build.cs`中更新路径、添加依赖项
+
+   ```c#
+   PublicDependencyModuleNames.AddRange(new string[] { 
+       "Core", 
+       "CoreUObject", 
+       "Engine", 
+       "InputCore",
+       "Niagara",
+       "PhysicsCore",
+       "GameplayTasks",
+       "NavigationSystem"
+   });
+   PublicIncludePaths.AddRange(new string[] { 
+       "ShootThemUp/Public/Player", 
+       "ShootThemUp/Public/Components", 
+       "ShootThemUp/Public/Dev",
+       "ShootThemUp/Public/Weapon",
+       "ShootThemUp/Public/UI",
+       "ShootThemUp/Public/Animations",
+       "ShootThemUp/Public/Pickups",
+       "ShootThemUp/Public/Weapon/Components",
+       "ShootThemUp/Public/AI",
+       "ShootThemUp/Public/AI/Tasks"
+   });
+   ```
+
+3. 修改`STUNextLocationTask`：获取一个位置并设置Blackboard中的键值
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "BehaviorTree/BTTaskNode.h"
+   #include "STUNextLocationTask.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUNextLocationTask : public UBTTaskNode {
+       GENERATED_BODY()
+   
+   public:
+       USTUNextLocationTask();
+   
+       virtual EBTNodeResult::Type ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) override;
+   
+   protected:
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       float Radius = 1000.0f;
+   
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       FBlackboardKeySelector AimLocationKey;
+   };
+   ```
+
+   ```c++
+   #include "AI/Tasks/STUNextLocationTask.h"
+   #include "BehaviorTree/BlackboardComponent.h"
+   #include "AIController.h"
+   #include "NavigationSystem.h"
+   
+   USTUNextLocationTask::USTUNextLocationTask() {
+       NodeName = "Generate and Set Next Location";
+   }
+   
+   EBTNodeResult::Type USTUNextLocationTask::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) {
+       const auto Controller = OwnerComp.GetAIOwner();
+       const auto Blackboard = OwnerComp.GetBlackboardComponent();
+       if (!Controller || !Blackboard) return EBTNodeResult::Type::Failed;
+       
+       const auto Pawn = Controller->GetPawn();
+       if (!Pawn) return EBTNodeResult::Type::Failed;
+   
+       const auto NavSystem = UNavigationSystemV1::GetCurrent(Pawn);
+       if (!NavSystem) return EBTNodeResult::Type::Failed;
+   
+       // 通过NavigationSystem获取一个随机点
+       FNavLocation NavLocation;
+       const auto Found = NavSystem->GetRandomReachablePointInRadius(Pawn->GetActorLocation(), Radius, NavLocation);
+       if (!Found) return EBTNodeResult::Type::Failed;
+       
+       // 设置Blackboard中的键值
+       Blackboard->SetValueAsVector(AimLocationKey.SelectedKeyName, NavLocation.Location);
+       return EBTNodeResult::Type::Succeeded;
+   }
+
+4. 修改`BB_STUCharacter`：
+
+   <img src="AssetMarkdown/image-20230220221436325.png" alt="image-20230220221436325" style="zoom:80%;" />
+
+5. 修改`BT_STUCharacter`：
+
+   1. 两个任务的黑板键均设为`AimLocation`
+
+   <img src="AssetMarkdown/image-20230220221739948.png" alt="image-20230220221739948" style="zoom:80%;" />
+
+6. 修改`BP_STUAIController`：
+
+   <img src="AssetMarkdown/image-20230220221903273.png" alt="image-20230220221903273" style="zoom:80%;" />
+
+# 四、AI角色平滑旋转
