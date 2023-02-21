@@ -4,6 +4,8 @@
 
 > 1. 在场景中，点击`P`键，可以显示导航体积覆盖的地方
 > 2. 在运行时，点击`'`键，可以显示AI相关的调试信息
+>    1. 点击`1`，可以显示AI行为树
+>    2. 点击`4`，可以显示AI视觉
 
 # 一、AI控制角色简单移动
 
@@ -310,4 +312,135 @@
    }
    ```
 
+# 五、AI感知组件
+
+> 该组件可以让NPC角色看到世界上的其他角色，并进行响应的反应
+
+1. 创建C++类`STUAIPerceptionComponent`，继承于`AIPerceptionComponent`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Components`
+
+2. 修改`STUAIController`：添加AI感知组件
+
+   ```c++
+   class USTUAIPerceptionComponent;
    
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUAIController : public AAIController {
+       GENERATED_BODY()
+   
+   public:
+       ASTUAIController();
+   
+   protected:
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+       USTUAIPerceptionComponent* STUAIPerceptionComponent;
+   };
+   ```
+
+   ```c++
+   #include "Components/STUAIPerceptionComponent.h"
+   
+   ASTUAIController::ASTUAIController() {
+       // 创建AI感知组件
+       STUAIPerceptionComponent = CreateDefaultSubobject<USTUAIPerceptionComponent>("STUAIPerceptionComponent");
+       SetPerceptionComponent(*STUAIPerceptionComponent);
+   }
+
+3. 修改`BP_STUAIController/STUAIPerceptionComponent/AI感知`
+
+   <img src="AssetMarkdown/image-20230221160922119.png" alt="image-20230221160922119" style="zoom:80%;" />
+
+4. 修改`STUAIPerceptionComponent`：找到最近的敌人
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Perception/AIPerceptionComponent.h"
+   #include "STUAIPerceptionComponent.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUAIPerceptionComponent : public UAIPerceptionComponent {
+       GENERATED_BODY()
+   
+   public:
+       AActor* GetClosetEnemy() const;
+   };
+   ```
+
+   ```c++
+   #include "Components/STUAIPerceptionComponent.h"
+   #include "AIController.h"
+   #include "STUUtils.h"
+   #include "Components/STUHealthComponent.h"
+   #include "Perception/AISense_Sight.h"
+   
+   AActor* USTUAIPerceptionComponent::GetClosetEnemy() const {
+       // 获取AI视野内的所有Actor
+       TArray<AActor*> PerciveActors;
+       GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), PerciveActors);
+       if (PerciveActors.Num() == 0) return nullptr;
+   
+       // 获取当前角色的Pawn
+       const auto Controller = Cast<AAIController>(GetOwner());
+       if (!Controller) return nullptr;
+       const auto Pawn = Controller->GetPawn();
+       if (!Pawn) return nullptr;
+   
+       // 获取距离当前角色最近的Character
+       float ClosetDistance = MAX_FLT;
+       AActor* ClosetActor = nullptr;
+       for (const auto PerciveActor : PerciveActors) {
+           const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(PerciveActor);
+           if (!HealthComponent || HealthComponent->IsDead()) continue;
+           
+           const auto CurrentDistance = (PerciveActor->GetActorLocation() - Pawn->GetActorLocation()).Size();
+           if (CurrentDistance < ClosetDistance) {
+               ClosetDistance = CurrentDistance;
+               ClosetActor = PerciveActor;
+           }
+       }
+   
+       return ClosetActor;
+   }
+
+5. 修改`STUUtils/GetSTUPlayerComponent()`：GetComponentByClass在AActor类中
+
+   ```c++
+   #pragma once
+   
+   class STUUtils {
+   public:
+       template<typename T>
+       static T* GetSTUPlayerComponent(AActor* PlayerPawn) {
+           if (!PlayerPawn) return nullptr;
+   
+           const auto Component = PlayerPawn->GetComponentByClass(T::StaticClass());
+           return Cast<T>(Component);
+       }
+   };
+   ```
+
+6. 修改`STUAIController`：找到最近的敌人，瞄准他
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUAIController : public AAIController {
+       ...
+   
+   protected:
+       virtual void Tick(float DeltaTime) override;
+   };
+   ```
+
+   ```c++
+   void ASTUAIController::Tick(float DeltaTime) {
+       Super::Tick(DeltaTime);
+       
+       // 找到最近的敌人, 瞄准他
+       const auto AimActor = STUAIPerceptionComponent->GetClosetEnemy();
+       SetFocus(AimActor);
+   }
+
+# 六、AI服务发现敌人
