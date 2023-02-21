@@ -220,3 +220,94 @@
    <img src="AssetMarkdown/image-20230220221903273.png" alt="image-20230220221903273" style="zoom:80%;" />
 
 # 四、AI角色平滑旋转
+
+1. 修改`STUAICharacter`：
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Player/STUBaseCharacter.h"
+   #include "STUAICharacter.generated.h"
+   
+   class UBehaviorTree;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUAICharacter : public ASTUBaseCharacter {
+       GENERATED_BODY()
+   
+   public:
+       ASTUAICharacter(const FObjectInitializer& ObjInit);
+   
+       // 角色AI的行为树
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "AI")
+       UBehaviorTree* BehaviorTreeAsset;
+   };
+   ```
+
+2. 修改`STUAIController`：角色被AIController捕获时，执行AI的行为树
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "AIController.h"
+   #include "STUAIController.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUAIController : public AAIController {
+       GENERATED_BODY()
+   
+   protected:
+       virtual void OnPossess(APawn* InPawn) override;
+   };
+   ```
+
+   ```c++
+   #include "AI/STUAIController.h"
+   #include "AI/STUAICharacter.h"
+   
+   void ASTUAIController::OnPossess(APawn* InPawn) {
+       Super::OnPossess(InPawn);
+   	
+   	// 执行AI的行为树
+       const auto STUCharacter = Cast<ASTUAICharacter>(InPawn);
+       if (STUCharacter) {
+           RunBehaviorTree(STUCharacter->BehaviorTreeAsset);
+       }
+   }
+
+3. 清除`BP_STUAIController`的事件列表
+
+4. 修改`BP_STUAICharacter`：为`BehaviorTreeAsset`赋值
+
+5. 修改`BP_STUAICharacter/角色移动组件`：
+
+   1. 设置角色旋转
+
+      <img src="AssetMarkdown/image-20230221153647179.png" alt="image-20230221153647179" style="zoom:80%;" />
+
+   2. 修改`BP_STUAICharacter/细节`：取消勾选`使用控制器旋转Yaw`
+
+6. 修改`STUAICharacter`：将上述修改写入C++
+
+   ```c++
+   #include "AI/STUAICharacter.h"
+   #include "AI/STUAIController.h"
+   #include "GameFramework/CharacterMovementComponent.h"
+   
+   ASTUAICharacter::ASTUAICharacter(const FObjectInitializer& ObjInit) : Super(ObjInit){
+       // 将该character自动由STUAIController接管
+       AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+       AIControllerClass = ASTUAIController::StaticClass();
+   
+       // 设置character的旋转
+       bUseControllerRotationYaw = false;
+       if (GetCharacterMovement()) {
+           GetCharacterMovement()->bUseControllerDesiredRotation = true;
+           GetCharacterMovement()->RotationRate = FRotator(0.0f, 200.0f, 0.0f);
+       }
+   }
+   ```
+
+   
