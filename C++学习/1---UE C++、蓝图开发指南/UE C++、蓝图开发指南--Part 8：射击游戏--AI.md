@@ -443,4 +443,188 @@
        SetFocus(AimActor);
    }
 
-# 六、AI服务发现敌人
+# 六、AI服务：发现敌人
+
+> AI服务：是可以添加到行为树节点的特殊类
+>
+> 1. 具有自己的Tick函数，可以在其中设置游戏逻辑
+>
+> 本节课任务：当AI看到敌人时，随机移动到敌人周围的一个位置
+
+1. 修改`BB_STUCharacter`：
+
+   <img src="AssetMarkdown/image-20230221164419447.png" alt="image-20230221164419447" style="zoom:80%;" />
+
+2. 新建C++类`STUFindEnemyService`，继承于`BTService`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/AI/Services`
+
+3. 在`ShootThemUp.Build.cs`中更新路径
+
+   ```c#
+   PublicIncludePaths.AddRange(new string[] { 
+       "ShootThemUp/Public/Player", 
+       "ShootThemUp/Public/Components", 
+       "ShootThemUp/Public/Dev",
+       "ShootThemUp/Public/Weapon",
+       "ShootThemUp/Public/UI",
+       "ShootThemUp/Public/Animations",
+       "ShootThemUp/Public/Pickups",
+       "ShootThemUp/Public/Weapon/Components",
+       "ShootThemUp/Public/AI",
+       "ShootThemUp/Public/AI/Tasks",
+       "ShootThemUp/Public/AI/Services"
+   });
+   ```
+
+4. 修改`STUFindEnemyService`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "BehaviorTree/BTService.h"
+   #include "STUFindEnemyService.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUFindEnemyService : public UBTService {
+       GENERATED_BODY()
+   
+   public:
+       USTUFindEnemyService();
+   
+   protected:
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       FBlackboardKeySelector EnemyActorKey;
+   
+       virtual void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override; 
+   };
+   ```
+
+   ```c++
+   #include "AI/Services/STUFindEnemyService.h"
+   #include "BehaviorTree/BlackboardComponent.h"
+   #include "AIController.h"
+   #include "STUUtils.h"
+   #include "Components/STUAIPerceptionComponent.h"
+   
+   USTUFindEnemyService::USTUFindEnemyService() {
+       NodeName = "Find Enemy";
+   }
+   
+   void USTUFindEnemyService::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) {
+       const auto Blackboard = OwnerComp.GetBlackboardComponent();
+       if (!Blackboard) return;
+   
+       const auto Controller = OwnerComp.GetAIOwner();
+       const auto PerceptionComponent = STUUtils::GetSTUPlayerComponent<USTUAIPerceptionComponent>(Controller);
+       if (!PerceptionComponent) return;
+   
+       Blackboard->SetValueAsObject(EnemyActorKey.SelectedKeyName, PerceptionComponent->GetClosetEnemy());
+   
+       Super::TickNode(OwnerComp, NodeMemory, DeltaSeconds);
+   }
+
+5. 修改`STUAIController`：
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUAIController : public AAIController {
+       ...
+   
+   protected:
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       FName FocusOnKeyName = "EnemyActor";
+   
+   private:
+       AActor* GetFocusOnActor() const;
+   };
+   ```
+
+   ```c++
+   #include "BehaviorTree/BlackboardComponent.h"
+   
+   void ASTUAIController::Tick(float DeltaTime) {
+       Super::Tick(DeltaTime);
+   
+       // 找到最近的敌人, 瞄准他
+       // const auto AimActor = STUAIPerceptionComponent->GetClosetEnemy();
+       const auto AimActor = GetFocusOnActor();
+       SetFocus(AimActor);
+   }
+   
+   AActor* ASTUAIController::GetFocusOnActor() const {
+       if (!GetBlackboardComponent()) return nullptr;
+       return Cast<AActor>(GetBlackboardComponent()->GetValueAsObject(FocusOnKeyName));
+   }
+
+6. 修改`BB_STUCharacter`：将`EnemyActor`的`键类型/基类`设置为`Actor`
+
+7. 修改`BT_STUCharacter`：将服务添加到行为树中
+
+   1. 右击`Selector`：添加服务`STUFindEnemyService`，将`EnemyActorKey`设置为`EnemyActor`
+   2. 点击`移动到敌人附近`：将黑板键设置为`EnemyActor`，勾选`观察黑板值`
+   3. 右击`攻击`：添加装饰器`Blackboard`，将其重命名为`发现敌人`，观察器中止设置为`self`，黑板键为`EnemyActor`
+
+   <img src="AssetMarkdown/image-20230221183905546.png" alt="image-20230221183905546" style="zoom:80%;" />
+
+8. 修改`STUNextLocationTask`：在某个Actor周围生成一个位置
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUNextLocationTask : public UBTTaskNode {
+       ...
+   protected:
+   
+       // 始终以自己为中心
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       bool SelfCenter = true;
+   
+       // 目标Actor
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI", meta = (EditCondition = "!SelfCenter"))
+       FBlackboardKeySelector CenterActorKey;
+   };
+   ```
+
+   ```c++
+   EBTNodeResult::Type USTUNextLocationTask::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) {
+       const auto Controller = OwnerComp.GetAIOwner();
+       const auto Blackboard = OwnerComp.GetBlackboardComponent();
+       if (!Controller || !Blackboard) return EBTNodeResult::Type::Failed;
+   
+       const auto Pawn = Controller->GetPawn();
+       if (!Pawn) return EBTNodeResult::Type::Failed;
+   
+       const auto NavSystem = UNavigationSystemV1::GetCurrent(Pawn);
+       if (!NavSystem) return EBTNodeResult::Type::Failed;
+   
+       // 通过NavigationSystem获取一个随机点
+       FNavLocation NavLocation;
+       auto Location = Pawn->GetActorLocation();
+       if (!SelfCenter) {
+           auto CenterActor = Cast<AActor>(Blackboard->GetValueAsObject(CenterActorKey.SelectedKeyName));
+           if (!CenterActor) return EBTNodeResult::Type::Failed;
+           Location = CenterActor->GetActorLocation();
+       }
+   
+       const auto Found = NavSystem->GetRandomReachablePointInRadius(Location, Radius, NavLocation);
+       if (!Found) return EBTNodeResult::Type::Failed;
+   
+       // 设置Blackboard中的键值
+       Blackboard->SetValueAsVector(AimLocationKey.SelectedKeyName, NavLocation.Location);
+       return EBTNodeResult::Type::Succeeded;
+   }
+   ```
+
+9. 修改`BT_STUCharacter`：
+
+   1. 点击`在敌人周围随机生成一个目标位置`：进行相应设置
+
+      <img src="AssetMarkdown/image-20230221184651453.png" alt="image-20230221184651453" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230221184639746.png" alt="image-20230221184639746" style="zoom:80%;" />
+
+10. 
+
+    
+
