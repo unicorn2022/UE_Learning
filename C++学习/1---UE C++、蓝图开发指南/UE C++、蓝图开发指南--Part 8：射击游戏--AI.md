@@ -710,3 +710,100 @@
 4. 修改`BT_STUCharacter`：
 
    <img src="AssetMarkdown/image-20230222153032785.png" alt="image-20230222153032785" style="zoom:80%;" />
+
+# 八、AI武器组件
+
+1. 创建C++类`STUAIWeaponComponent`，继承于`STUWeaponComponent`：
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Components`
+
+2. 修改`STUBaseWeapon`：
+
+   1. 将`IsAmmoEmpty()、IsClipEmpty()`放到`public`中
+
+3. 修改`STUWeaponComponent`：
+
+   1. 将`StartFire()、NextWeapon()`虚拟化
+   2. 将`CurrentWeapon、Weapons、CurrentWeaponIndex`放到`protected`中
+   3. 将`CanFire()、CanEquip()、EquipWeapon()`放到`protected`中
+
+4. 修改`STUAIWeaponComponent`：
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Components/STUWeaponComponent.h"
+   #include "STUAIWeaponComponent.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUAIWeaponComponent : public USTUWeaponComponent {
+       GENERATED_BODY()
+   
+   public:
+       virtual void StartFire() override;
+       virtual void NextWeapon() override;
+   };
+   ```
+
+   ```c++
+   // Shoot Them Up Game, All Rights Reserved
+   
+   #include "Components/STUAIWeaponComponent.h"
+   #include "Weapon/STUBaseWeapon.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUAIWeaponComponent, All, All);
+   
+   void USTUAIWeaponComponent::StartFire() {
+       // 当前武器没有弹药了: 换武器
+       if (CurrentWeapon->IsAmmoEmpty()) {
+           NextWeapon();
+       }
+       // 当前弹夹没有子弹了: 换弹夹
+       else if (CurrentWeapon->IsClipEmpty()) {
+           Reload();
+       } 
+       // 当前弹夹有子弹: 开始射击
+       else {
+           if (!CanFire()) return;
+           CurrentWeapon->StartFire();
+       }
+   
+   }
+   
+   void USTUAIWeaponComponent::NextWeapon() {
+       if (!CanEquip()) return;
+       
+       // 为防止AI无限换武器, 需要判定下一把武器有子弹, 才能更换
+       int32 NextIndex  = (CurrentWeaponIndex + 1) % Weapons.Num();
+       while (NextIndex != CurrentWeaponIndex) {
+           if (!Weapons[NextIndex]->IsAmmoEmpty()) break;
+           NextIndex = (NextIndex + 1) % Weapons.Num();
+       }
+   
+       if (NextIndex != CurrentWeaponIndex) {
+           CurrentWeaponIndex = NextIndex;
+           EquipWeapon(CurrentWeaponIndex);
+       }
+   }
+   ```
+
+5. 修改`STUAICharacter`：覆盖武器组件的生成
+
+   ```c++
+   ASTUAICharacter::ASTUAICharacter(const FObjectInitializer& ObjInit)
+       : Super(ObjInit.SetDefaultSubobjectClass<USTUAIWeaponComponent>("STUWeaponComponent")) {
+       // 将该character自动由STUAIController接管
+       AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+       AIControllerClass = ASTUAIController::StaticClass();
+   
+       // 设置character的旋转
+       bUseControllerRotationYaw = false;
+       if (GetCharacterMovement()) {
+           GetCharacterMovement()->bUseControllerDesiredRotation = true;
+           GetCharacterMovement()->RotationRate = FRotator(0.0f, 200.0f, 0.0f);
+       }
+   }
+   ```
+
+6. 
