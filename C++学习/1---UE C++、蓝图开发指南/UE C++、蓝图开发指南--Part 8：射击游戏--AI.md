@@ -1173,3 +1173,92 @@
 5. 修改`STUBaseWeapon`：将`IsAmmoFull()`放到`public`中
 
 6. 修改`BT_STUCharacter`：
+
+   <img src="AssetMarkdown/image-20230223005103526.png" alt="image-20230223005103526" style="zoom:80%;" />
+
+# 十五、EQS & C++测试类：判断是否可以拾取
+
+1. 创建C++类`EnvQueryTest_PickupCouldBeTaken`，继承于`EnvQueryTest`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/AI/EQS`
+
+2. 修改`EnvQueryTest_PickupCouldBeTaken`：添加测试逻辑
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "EnvironmentQuery/EnvQueryTest.h"
+   #include "EnvQueryTest_PickupCouldBeTaken.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API UEnvQueryTest_PickupCouldBeTaken : public UEnvQueryTest {
+       GENERATED_BODY()
+   
+   public:
+       UEnvQueryTest_PickupCouldBeTaken(const FObjectInitializer& ObjectInitializer);
+       virtual void RunTest(FEnvQueryInstance& QueryInstance) const override;
+   };
+   ```
+
+   ```c++
+   #include "AI/EQS/EnvQueryTest_PickupCouldBeTaken.h"
+   #include "EnvironmentQuery/Items/EnvQueryItemType_ActorBase.h"
+   #include "Pickups/STUBasePickup.h"
+   
+   UEnvQueryTest_PickupCouldBeTaken::UEnvQueryTest_PickupCouldBeTaken(const FObjectInitializer& ObjectInitializer)
+       : Super(ObjectInitializer) 
+   {
+       Cost = EEnvTestCost::Low;
+       ValidItemType = UEnvQueryItemType_ActorBase::StaticClass();
+       SetWorkOnFloatValues(false);
+   }
+   
+   void UEnvQueryTest_PickupCouldBeTaken::RunTest(FEnvQueryInstance& QueryInstance) const {
+       // 获得当前测试设置的布尔匹配值
+       const auto DataOwner = QueryInstance.Owner.Get();
+       BoolValue.BindData(DataOwner, QueryInstance.QueryID);
+       const bool WantsBeTakable = BoolValue.GetValue();
+   
+       for (FEnvQueryInstance::ItemIterator It(this, QueryInstance); It; ++It) {
+           const auto ItemActor = GetItemActor(QueryInstance, It.GetIndex());
+           const auto PickupActor = Cast<ASTUBasePickup>(ItemActor);
+           if (!PickupActor) continue;
+   
+           // 判断当前Actor是否可以被拾取
+           const auto CouldBeTaken = PickupActor->CouldBeTaken();
+           It.SetScore(TestPurpose, FilterType, CouldBeTaken, WantsBeTakable);
+       }
+   }
+   ```
+
+3. 修改`STUBasePickup`：添加`CouldBeTaken()`函数
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBasePickup : public AActor {
+       ...
+   
+   protected:
+       // 是否可以被捡起
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup")
+       bool CouldBeTakenTest = true;
+       
+   public:
+       // 可以被捡起
+       bool CouldBeTaken() const;
+   };
+   ```
+
+   ```c++
+   bool ASTUBasePickup::CouldBeTaken() const {
+       // return !GetWorldTimerManager().IsTimerActive(RespawnTimeHandle);
+       return CouldBeTakenTest;
+   }
+   ```
+
+4. 修改`EQS_FindAmmoPickup`：添加测试`EnvQueryTest_PickupCouldBeTaken`
+
+   <img src="AssetMarkdown/image-20230223010859840.png" alt="image-20230223010859840" style="zoom:80%;" />
+
+5. 
