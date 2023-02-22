@@ -884,4 +884,24 @@
        }
    }
 
-3. 
+# 十一、EQS：环境查询系统 介绍
+
+1. 创建人工智能/环境查询`EQS_RandomRoam`
+
+   1. 路径：`AI/EQS`
+
+2. 创建蓝图类`EQS_TestPawn`，继承于EQSTestPawn
+
+   1. 路径：`AI/EQS`
+   2. 将`EQS/查询模板`设为`EQS_RandomRoam`
+
+3. 修改`EQS_RandomRoam`
+
+   <img src="AssetMarkdown/image-20230222174008608.png" alt="image-20230222174008608" style="zoom:80%;" />
+
+   |                           生成Cone                           |
+   | :----------------------------------------------------------: |
+   | <img src="AssetMarkdown/image-20230222174053120.png" alt="image-20230222174053120" style="zoom:80%;" /> |
+   |                        **距离过滤器**                        |
+   | <img src="AssetMarkdown/image-20230222174115367.png" alt="image-20230222174115367" style="zoom:80%;" /> |
+
