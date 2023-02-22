@@ -5,6 +5,7 @@
 > 1. 在场景中，点击`P`键，可以显示导航体积覆盖的地方
 > 2. 在运行时，点击`'`键，可以显示AI相关的调试信息
 >    1. 点击`1`，可以显示AI行为树
+>    1. 点击`3`，可以显示EQS
 >    2. 点击`4`，可以显示AI视觉
 
 # 一、AI控制角色简单移动
@@ -902,6 +903,106 @@
    |                           生成Cone                           |
    | :----------------------------------------------------------: |
    | <img src="AssetMarkdown/image-20230222174053120.png" alt="image-20230222174053120" style="zoom:80%;" /> |
-   |                        **距离过滤器**                        |
+   |                         **距离测试**                         |
    | <img src="AssetMarkdown/image-20230222174115367.png" alt="image-20230222174115367" style="zoom:80%;" /> |
+
+# 十二、EQS：设置随机点的中心/EQS上下文
+
+1. 创建EQS系统`EQS_NextToEnemyLocation`，将`EQS_TestPawn`的查询模板设置为`EQS_NextToEnemyLocation`
+
+2. 修改`EQS_NextToEnemyLocation`
+
+   <img src="AssetMarkdown/image-20230222230809423.png" alt="image-20230222230809423" style="zoom:80%;" />
+
+   |                          生成Donut                           |
+   | :----------------------------------------------------------: |
+   | <img src="AssetMarkdown/image-20230222205555724.png" alt="image-20230222205555724" style="zoom:80%;" /> |
+   |                         **距离测试**                         |
+   | <img src="AssetMarkdown/image-20230222230215030.png" alt="image-20230222230215030" style="zoom:80%;" /> |
+
+3. 创建蓝图类`EQS_ContextSTUCharacter`，继承于`EnvQueryContext_BlueprintBase`
+
+   <img src="AssetMarkdown/image-20230222230629757.png" alt="image-20230222230629757" style="zoom:80%;" />
+
+4. 修改`EQS_NextToEnemyLocation`：在`EQS_ContextSTUCharacter`周围生成项目
+
+   1. 居中：设置为`EQS_ContextSTUCharacter`
+
+   <img src="AssetMarkdown/image-20230222230701459.png" alt="image-20230222230701459" style="zoom:80%;" />
+
+5. 修改AI的行为树，此时进入调试，可以发现始终以角色控制的玩家为中心生成随机点
+
+6. 创建C++类`STUEnemyEnvQueryContext`，继承于`EnvQueryContext`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/AI/EQS`
+
+7. 在`ShootThemUp.Build.cs`中更新路径
+
+   ```c#
+   PublicIncludePaths.AddRange(new string[] { 
+       "ShootThemUp/Public/Player", 
+       "ShootThemUp/Public/Components", 
+       "ShootThemUp/Public/Dev",
+       "ShootThemUp/Public/Weapon",
+       "ShootThemUp/Public/UI",
+       "ShootThemUp/Public/Animations",
+       "ShootThemUp/Public/Pickups",
+       "ShootThemUp/Public/Weapon/Components",
+       "ShootThemUp/Public/AI",
+       "ShootThemUp/Public/AI/Tasks",
+       "ShootThemUp/Public/AI/Services",
+       "ShootThemUp/Public/AI/EQS"
+   });
+   ```
+
+8. 修改`STUEnemyEnvQueryContext`：将上下文设为黑板中的EnemyActor
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "EnvironmentQuery/EnvQueryContext.h"
+   #include "STUEnemyEnvQueryContext.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUEnemyEnvQueryContext : public UEnvQueryContext {
+       GENERATED_BODY()
+   
+   public:
+       virtual void ProvideContext(FEnvQueryInstance& QueryInstance, FEnvQueryContextData& ContextData) const;
+   
+   protected:
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       FName EnemyActorKeyName = "EnemyActor";
+   };
+   ```
+
+   ```c++
+   #include "AI/EQS/STUEnemyEnvQueryContext.h"
+   #include "EnvironmentQuery/EnvQueryTypes.h"
+   #include "EnvironmentQuery/Items/EnvQueryItemType_Actor.h"
+   #include "BehaviorTree/BlackboardComponent.h"
+   #include "Blueprint/AIBlueprintHelperLibrary.h"
+   
+   void USTUEnemyEnvQueryContext::ProvideContext(FEnvQueryInstance& QueryInstance, FEnvQueryContextData& ContextData) const {
+       const auto QueryOwner = Cast<AActor>(QueryInstance.Owner.Get());
+       const auto Blackboard = UAIBlueprintHelperLibrary::GetBlackboard(QueryOwner);
+       if (!Blackboard) return;
+   
+       const auto ContextActor = Blackboard->GetValueAsObject(EnemyActorKeyName);
+       UEnvQueryItemType_Actor::SetContextHelper(ContextData, Cast<AActor>(ContextActor));
+   }
+
+9. 修改`EQS_NextToEnemyLocation`：
+
+   1. 居中：设置为`STUEnemyEnvQueryContext`
+   2. 距离测试/到此距离：设置为`STUEnemyEnvQueryContext`
+
+   <img src="AssetMarkdown/image-20230222233134374.png" alt="image-20230222233134374" style="zoom:80%;" />
+
+10. 修改`BT_STUCharacter`
+
+    <img src="AssetMarkdown/image-20230222233500002.png" alt="image-20230222233500002" style="zoom:80%;" />
+
+11. 
 
