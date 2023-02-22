@@ -1004,5 +1004,90 @@
 
     <img src="AssetMarkdown/image-20230222233500002.png" alt="image-20230222233500002" style="zoom:80%;" />
 
-11. 
+# 十三、EQS：C++装饰器--根据血量判断是否拾取HealthPickup
+
+1. 创建EQS系统`EQS_FindHealthPickup`
+
+2. 修改`EQS_FindHealthPickup`
+
+   <img src="AssetMarkdown/image-20230223001655415.png" alt="image-20230223001655415" style="zoom:80%;" />
+
+   |                          Trace测试                           |
+   | :----------------------------------------------------------: |
+   | <img src="AssetMarkdown/image-20230222234942969.png" alt="image-20230222234942969" style="zoom:80%;" /> |
+   |                       **Distance测试**                       |
+   | <img src="AssetMarkdown/image-20230222235006446.png" alt="image-20230222235006446" style="zoom:80%;" /> |
+
+3. 创建C++类`STUHealthPercentDecorator`，继承于`BTDecorator`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/AI/Decorators`
+
+4. 在`ShootThemUp.Build.cs`中更新路径
+
+   ```c#
+   PublicIncludePaths.AddRange(new string[] { 
+       "ShootThemUp/Public/Player", 
+       "ShootThemUp/Public/Components", 
+       "ShootThemUp/Public/Dev",
+       "ShootThemUp/Public/Weapon",
+       "ShootThemUp/Public/UI",
+       "ShootThemUp/Public/Animations",
+       "ShootThemUp/Public/Pickups",
+       "ShootThemUp/Public/Weapon/Components",
+       "ShootThemUp/Public/AI",
+       "ShootThemUp/Public/AI/Tasks",
+       "ShootThemUp/Public/AI/Services",
+       "ShootThemUp/Public/AI/EQS",
+       "ShootThemUp/Public/AI/Decorators"
+   });
+   ```
+
+5. 修改`STUHealthPercentDecorator`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "BehaviorTree/BTDecorator.h"
+   #include "STUHealthPercentDecorator.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUHealthPercentDecorator : public UBTDecorator {
+       GENERATED_BODY()
+   
+   public:
+       USTUHealthPercentDecorator();
+   
+   protected:
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       float HealthPercent = 0.6f;
+   
+       virtual bool CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const override;
+   };
+   ```
+
+   ```c++
+   #include "AI/Decorators/STUHealthPercentDecorator.h"
+   #include "AIController.h"
+   #include "STUUtils.h"
+   #include "Components/STUHealthComponent.h"
+   
+   USTUHealthPercentDecorator::USTUHealthPercentDecorator() {
+       NodeName = "Health Percent";
+   }
+   
+   bool USTUHealthPercentDecorator::CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const {
+       const auto Controller = OwnerComp.GetAIOwner();
+       if (!Controller) return false;
+   
+       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(Controller->GetPawn());
+       if (!HealthComponent || HealthComponent->IsDead()) return false;
+   
+       return HealthComponent->GetHealthPercent() <= HealthPercent;
+   }
+   ```
+
+6. 修改`BT_STUCharacter`
+
+   <img src="AssetMarkdown/image-20230223002608900.png" alt="image-20230223002608900" style="zoom:80%;" />
 
