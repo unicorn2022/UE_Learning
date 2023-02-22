@@ -1261,4 +1261,6 @@
 
    <img src="AssetMarkdown/image-20230223010859840.png" alt="image-20230223010859840" style="zoom:80%;" />
 
-5. 
+# 十六、游戏打包
+
+1. 向场景中添加一些新的拾取物、AI角色
