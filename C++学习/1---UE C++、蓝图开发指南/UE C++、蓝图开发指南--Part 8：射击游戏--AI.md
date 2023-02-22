@@ -624,7 +624,89 @@
 
    <img src="AssetMarkdown/image-20230221184639746.png" alt="image-20230221184639746" style="zoom:80%;" />
 
-10. 
 
-    
+# 七、AI服务：自动开火
 
+1. 新建C++类`STUFireService`，继承于`BTService`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/AI/Services`
+
+2. 修改`STUFireService`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "BehaviorTree/BTService.h"
+   #include "STUFireService.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUFireService : public UBTService {
+       GENERATED_BODY()
+   
+   public:
+       USTUFireService();
+   
+   protected:
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       FBlackboardKeySelector EnemyActorKey;
+   
+       virtual void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
+   };
+   ```
+
+   ```c++
+   #include "AI/Services/STUFireService.h"
+   #include "AIController.h"
+   #include "BehaviorTree/BlackboardComponent.h"
+   #include "Components/STUWeaponComponent.h"
+   #include "STUUtils.h"
+   
+   USTUFireService::USTUFireService() {
+       NodeName = "Fire";
+   }
+   
+   void USTUFireService::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) {
+       const auto Controller = OwnerComp.GetAIOwner();
+       const auto Blackboard = OwnerComp.GetBlackboardComponent();
+       const auto HasAim = Blackboard && Blackboard->GetValueAsObject(EnemyActorKey.SelectedKeyName);
+   
+       if (Controller) {
+           const auto WeaponComponent = STUUtils::GetSTUPlayerComponent<USTUWeaponComponent>(Controller->GetPawn());
+           if (WeaponComponent) {
+               if (HasAim)
+                   WeaponComponent->StartFire();
+               else
+                   WeaponComponent->StopFire();
+           }
+       }
+   
+       Super::TickNode(OwnerComp, NodeMemory, DeltaSeconds);
+   }
+
+3. 修改`STUBaseWeapon/GetPlayerViewPoint()`：
+
+   ```c++
+   bool ASTUBaseWeapon::GetPlayerViewPoint(FVector& ViewLocation, FRotator& ViewRotation) const {
+       const auto STUCharacter = Cast<ACharacter>(GetOwner());
+       if (!STUCharacter) return false;
+   
+       // 如果为玩家控制, 则返回玩家的朝向
+       if (STUCharacter->IsPlayerControlled()) {
+           const auto Controller = GetPlayerController();
+           if (!Controller) return false;
+           Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
+       } 
+       // 如果为AI控制, 则返回枪口的朝向
+       else {
+           ViewLocation = GetMuzzleWorldLocation();
+           ViewRotation = WeaponMesh->GetSocketRotation(MuzzleSocketName);
+       }
+   
+       return true;
+   }
+   ```
+
+4. 修改`BT_STUCharacter`：
+
+   <img src="AssetMarkdown/image-20230222153032785.png" alt="image-20230222153032785" style="zoom:80%;" />
