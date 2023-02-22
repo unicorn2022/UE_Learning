@@ -864,4 +864,24 @@
 
    <img src="AssetMarkdown/image-20230222170005764.png" alt="image-20230222170005764" style="zoom:80%;" />
 
-# 十、行为树停止
+# 十、AI死亡时停止行为树
+
+1. 修改`STUBaseCharacter`：
+
+   1. 将`OnDeath()`虚拟化，并修改为`protected`
+
+2. 修改`STUAICharacter/OnDeath()`：
+
+   ```c++
+   #include "BrainComponent.h"
+   void ASTUAICharacter::OnDeath() {
+       Super::OnDeath();
+   
+       // 角色死亡时, 清空行为树
+       const auto STUController = Cast<AAIController>(Controller);
+       if (STUController && STUController->BrainComponent) {
+           STUController->BrainComponent->Cleanup();
+       }
+   }
+
+3. 
