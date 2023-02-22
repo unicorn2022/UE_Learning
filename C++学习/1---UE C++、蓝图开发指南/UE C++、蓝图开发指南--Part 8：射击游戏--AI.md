@@ -1004,7 +1004,7 @@
 
     <img src="AssetMarkdown/image-20230222233500002.png" alt="image-20230222233500002" style="zoom:80%;" />
 
-# 十三、EQS：C++装饰器--根据血量判断是否拾取HealthPickup
+# 十三、EQS & C++装饰器：根据血量判断是否拾取HealthPickup
 
 1. 创建EQS系统`EQS_FindHealthPickup`
 
@@ -1091,3 +1091,85 @@
 
    <img src="AssetMarkdown/image-20230223002608900.png" alt="image-20230223002608900" style="zoom:80%;" />
 
+# 十四、EQS & C++装饰器：根据弹药数判断是否拾取AmmoPickup
+
+1. 创建EQS系统`EQS_FindAmmoPickup`
+
+   <img src="AssetMarkdown/image-20230223003602581.png" alt="image-20230223003602581" style="zoom:80%;" />
+
+2. 创建C++类`STUNeedAmmoDecorator`，继承于`BTDecorator`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/AI/Decorators`
+
+3. 修改`STUNeedAmmoDecorator`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "BehaviorTree/BTDecorator.h"
+   #include "STUNeedAmmoDecorator.generated.h"
+   
+   class ASTUBaseWeapon;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUNeedAmmoDecorator : public UBTDecorator {
+       GENERATED_BODY()
+   public:
+       USTUNeedAmmoDecorator();
+   
+   protected:
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+       TSubclassOf<ASTUBaseWeapon> WeaponType;
+   
+       virtual bool CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const override;
+   };
+   ```
+
+   ```c++
+   #include "AI/Decorators/STUNeedAmmoDecorator.h"
+   #include "AIController.h"
+   #include "STUUtils.h"
+   #include "Components/STUWeaponComponent.h"
+   
+   USTUNeedAmmoDecorator::USTUNeedAmmoDecorator() {
+       NodeName = "Need Ammo";
+   }
+   
+   bool USTUNeedAmmoDecorator::CalculateRawConditionValue(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory) const {
+       const auto Controller = OwnerComp.GetAIOwner();
+       if (!Controller) return false;
+   
+       const auto WeaponComponent = STUUtils::GetSTUPlayerComponent<USTUWeaponComponent>(Controller->GetPawn());
+       if (!WeaponComponent) return false;
+   
+       return WeaponComponent->NeedAmmo(WeaponType);
+   }
+   ```
+
+4. 修改`STUWeaponComponent`：添加`NeedAmmo()`函数
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUWeaponComponent : public UActorComponent {
+       GENERATED_BODY()
+   
+   public:
+       // 判断是否需要拾取弹药
+       bool NeedAmmo(TSubclassOf<ASTUBaseWeapon> WeaponType);
+   };
+   ```
+
+   ```c++
+   bool USTUWeaponComponent::NeedAmmo(TSubclassOf<ASTUBaseWeapon> WeaponType) {
+       for (const auto Weapon : Weapons) {
+           if (Weapon && Weapon->IsA(WeaponType)) {
+               return !Weapon->IsAmmoFull();
+           }
+       }
+       return false;
+   }
+
+5. 修改`STUBaseWeapon`：将`IsAmmoFull()`放到`public`中
+
+6. 修改`BT_STUCharacter`：
