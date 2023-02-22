@@ -806,4 +806,62 @@
    }
    ```
 
-6. 
+# 九、AI服务：武器更换
+
+1. 新建C++类`STUChangeWeaponService`，继承于`BTService`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/AI/Services`
+
+2. 修改`STUChangeWeaponService`：
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "BehaviorTree/BTService.h"
+   #include "STUChangeWeaponService.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUChangeWeaponService : public UBTService {
+       GENERATED_BODY()
+   
+   public:
+       USTUChangeWeaponService();
+   
+   protected:
+       UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+       float Probability = 0.5f;
+   
+       virtual void TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) override;
+   };
+   ```
+
+   ```c++
+   #include "AI/Services/STUChangeWeaponService.h"
+   #include "Components/STUWeaponComponent.h"
+   #include "AIController.h"
+   #include "STUUtils.h"
+   
+   USTUChangeWeaponService::USTUChangeWeaponService() {
+       NodeName = "Change Weapon";
+   }
+   
+   void USTUChangeWeaponService::TickNode(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, float DeltaSeconds) {
+       const auto Controller = OwnerComp.GetAIOwner();
+       
+       // 以Probability的概率更换武器
+       if (Controller) {
+           const auto WeaponComponent = STUUtils::GetSTUPlayerComponent<USTUWeaponComponent>(Controller->GetPawn());
+           if (WeaponComponent && Probability > 0 && FMath::FRand() <= Probability) {
+               WeaponComponent->NextWeapon();
+           }
+       }
+   
+       Super::TickNode(OwnerComp, NodeMemory, DeltaSeconds);
+   }
+
+3. 修改`BT_STUCharacter`：
+
+   <img src="AssetMarkdown/image-20230222170005764.png" alt="image-20230222170005764" style="zoom:80%;" />
+
+# 十、行为树停止
