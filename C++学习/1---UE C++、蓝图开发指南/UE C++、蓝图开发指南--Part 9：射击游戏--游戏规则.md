@@ -668,3 +668,112 @@
    }
    ```
 
+# 八、使用UI显示回合时间等数据
+
+1. 创建C++类，继承于`STUGameDataWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
+
+2. 修改`STUGameModeBase`：创建GameData、RoundNum、RoundSeconds的getter函数
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUGameModeBase : public AGameModeBase {
+       ...
+   public:
+       FGameData GetGameData() const { return GameData; }
+       int32 GetCurrentRoundNum() const { return CurrentRound; }
+       int32 GetRoundSecondsRemaining() const { return RoundCountDown; }
+   };
+
+3. 修改`STUGameDataWidget`：
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUGameDataWidget.generated.h"
+   
+   class ASTUGameModeBase;
+   class ASTUPlayerState;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGameDataWidget : public UUserWidget {
+       GENERATED_BODY()
+   
+   public:
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       int32 GetKillsNum() const;
+       
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       int32 GetCurrentRoundNum() const;
+   
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       int32 GetTotalRoundsNum() const;
+   
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       int32 GetRoundSecondsRemaining() const;
+   
+   private:
+       ASTUGameModeBase* GetSTUGameMode() const;
+   
+       ASTUPlayerState* GetSTUPlayerState() const;
+   }
+   ```
+
+   ```c++
+   #include "UI/STUGameDataWidget.h"
+   #include "STUGameModeBase.h"
+   #include "Player/STUPlayerState.h"
+   
+   int32 USTUGameDataWidget::GetKillsNum() const {
+       const auto PlayerState = GetSTUPlayerState();
+       if (!PlayerState) return 0;
+       return PlayerState->GetKillsNum();
+   }
+   
+   int32 USTUGameDataWidget::GetCurrentRoundNum() const {
+       const auto GameMode = GetSTUGameMode();
+       if (!GameMode) return 0;
+       return GameMode->GetCurrentRoundNum();
+   }
+   
+   int32 USTUGameDataWidget::GetTotalRoundsNum() const {
+       const auto GameMode = GetSTUGameMode();
+       if (!GameMode) return 0;
+       return GameMode->GetGameData().RoundsNum;
+   }
+   
+   int32 USTUGameDataWidget::GetRoundSecondsRemaining() const {
+       const auto GameMode = GetSTUGameMode();
+       if (!GameMode) return 0;
+       return GameMode->GetRoundSecondsRemaining();
+   }
+   
+   ASTUGameModeBase* USTUGameDataWidget::GetSTUGameMode() const {
+       if (!GetWorld()) return nullptr;
+       return Cast<ASTUGameModeBase>(GetWorld()->GetAuthGameMode());
+   }
+   
+   ASTUPlayerState* USTUGameDataWidget::GetSTUPlayerState() const {
+       if (GetOwningPlayer()) return nullptr;
+       return Cast<ASTUPlayerState>(GetOwningPlayer()->PlayerState);
+   }
+
+4. 新建蓝图类`WBP_GameData`，继承于`STUGameDataWidget`
+
+   1. 路径：`UI`
+
+5. 修改`WBP_GameData`：
+
+   <img src="AssetMarkdown/image-20230225212951685.png" alt="image-20230225212951685" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230225213506893.png" alt="image-20230225213506893" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230225213003425.png" alt="image-20230225213003425" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230225213016231.png" alt="image-20230225213016231" style="zoom:80%;" />
+
+6. 修改`BP_PlayerHUD`：添加`WBP_GameData`，可视性绑定为`Is_Player_Alive`
+
