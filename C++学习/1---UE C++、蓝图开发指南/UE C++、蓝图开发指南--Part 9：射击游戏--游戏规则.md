@@ -670,7 +670,7 @@
 
 # 八、使用UI显示回合时间等数据
 
-1. 创建C++类，继承于`STUGameDataWidget`
+1. 创建C++类`STUGameDataWidget`，继承于`UUserWidget`
 
    1. 目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
 
@@ -777,3 +777,194 @@
 
 6. 修改`BP_PlayerHUD`：添加`WBP_GameData`，可视性绑定为`Is_Player_Alive`
 
+# 九、重生组件：在回合结束前重生
+
+1. 创建C++类`STURespawnComponent`，继承于`Actor组件`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Components`
+
+2. 修改`STUCoreTypes/FGameData`：设置重生时间
+
+   ```c++
+   USTRUCT(BlueprintType)
+   struct FGameData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 玩家数量
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game", meta = (ClampMin = "1", ClampMax = "100"))
+       int32 PlayersNum = 2;
+   
+       // 回合数量
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game", meta = (ClampMin = "1", ClampMax = "10"))
+       int32 RoundsNum = 4;
+   
+       // 一回合的时间(s)
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game", meta = (ClampMin = "3", ClampMax = "300"))
+       int32 RoundTime = 10;
+   
+       // 默认队伍颜色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+       FLinearColor DefaultTeamColor = FLinearColor::Red;
+   
+       // 队伍可选颜色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+       TArray<FLinearColor> TeamColors;
+   
+       // 重生的时间(s)
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game", meta = (ClampMin = "3", ClampMax = "20"))
+       int32 RespawnTime = 5;
+   };
+   ```
+
+3. 修改`STURespawnComponent`：
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Components/ActorComponent.h"
+   #include "STURespawnComponent.generated.h"
+   
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTURespawnComponent : public UActorComponent {
+       GENERATED_BODY()
+   
+   public:
+       USTURespawnComponent();
+   
+       // 一段时间后重生
+       void Respawn(int32 RespawnTime);
+   
+   private:
+       FTimerHandle RespawnTimerHandle;
+       int32 RespawnCountDown = 0;
+       void RespawnTimerUpdate();
+   };
+   ```
+
+   ```c++
+   #include "Components/STURespawnComponent.h"
+   #include "STUGameModeBase.h"
+   
+   USTURespawnComponent::USTURespawnComponent() {
+       PrimaryComponentTick.bCanEverTick = false;
+   }
+   
+   // 一段时间后重生
+   void USTURespawnComponent::Respawn(int32 RespawnTime) {
+       if (!GetWorld()) return;
+   
+       RespawnCountDown = RespawnTime;
+       GetWorld()->GetTimerManager().SetTimer(RespawnTimerHandle, this, &USTURespawnComponent::RespawnTimerUpdate, 1.0f, true);
+   }
+   
+   void USTURespawnComponent::RespawnTimerUpdate() {
+       RespawnCountDown--;
+       if (RespawnCountDown <= 0) {
+           if (!GetWorld()) return;
+           GetWorld()->GetTimerManager().ClearTimer(RespawnTimerHandle);
+   
+           const auto GameMode = Cast<ASTUGameModeBase>(GetWorld()->GetAuthGameMode());
+           if (!GameMode) return;
+   
+           GameMode->RespawnResqust(Cast<AController>(GetOwner()));
+       }
+   }
+   ```
+
+4. 修改`STUGameMode`：添加角色被击杀后重生的逻辑
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUGameModeBase : public AGameModeBase {
+       ...
+   public:
+       // 请求重新生成Character
+       void RespawnResqust(AController* Controller);
+   
+   private:
+       // 重新生成角色
+       void StartRespawn(AController* Controller);
+   };
+   ```
+
+   ```c++
+   constexpr static int32 MinRoundTimeForRespawn = 10;
+   
+   void ASTUGameModeBase::Killed(AController* KillerController, AController* VictimController) {
+       const auto KillerPlayerState = KillerController ? Cast<ASTUPlayerState>(KillerController->PlayerState) : nullptr;
+       const auto VictimPlayerState = VictimController ? Cast<ASTUPlayerState>(VictimController->PlayerState) : nullptr;
+   
+       if (KillerPlayerState) KillerPlayerState->AddKill();
+       if (VictimPlayerState) VictimPlayerState->AddDeath();
+   
+       // 让victim重生
+       StartRespawn(VictimController);
+   }
+   
+   void ASTUGameModeBase::StartRespawn(AController* Controller) {
+       // 剩余时间不足以重生
+       if (RoundCountDown <= GameData.RespawnTime + MinRoundTimeForRespawn) return;
+   
+       const auto RespawnComponent = STUUtils::GetSTUPlayerComponent<USTURespawnComponent>(Controller);
+       if (!RespawnComponent) return;
+   
+       RespawnComponent->Respawn(GameData.RespawnTime);
+   }
+   
+   void ASTUGameModeBase::RespawnResqust(AController* Controller) {
+       ResetOnePlayer(Controller);
+   }
+
+5. 修改`STUAIController、STUPlayerController`：添加`RespawnComponent`
+
+   ```c++
+   #include "Components/STURespawnComponent.h"
+   
+   ASTUAIController::ASTUAIController() {
+       // 创建AI感知组件
+       STUAIPerceptionComponent = CreateDefaultSubobject<USTUAIPerceptionComponent>("STUAIPerceptionComponent");
+       SetPerceptionComponent(*STUAIPerceptionComponent);
+   
+       // 创建重生组件
+       RespawnComponent = CreateDefaultSubobject<USTURespawnComponent>("STURespawnComponent");
+       
+   
+       // 为AI分配PlayerState
+       bWantsPlayerState = true;
+   }
+   ```
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "GameFramework/PlayerController.h"
+   #include "STUPlayerController.generated.h"
+   
+   class USTURespawnComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUPlayerController : public APlayerController {
+       GENERATED_BODY()
+   
+   public:
+       ASTUPlayerController();
+   
+   protected:
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+       USTURespawnComponent* RespawnComponent;
+   };
+   ```
+
+   ```c++
+   #include "Player/STUPlayerController.h"
+   #include "Components/STURespawnComponent.h"
+   
+   ASTUPlayerController::ASTUPlayerController() {
+       // 创建重生组件
+       RespawnComponent = CreateDefaultSubobject<USTURespawnComponent>("STURespawnComponent");
+   }
+   ```
+
+6. 
