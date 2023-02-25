@@ -257,7 +257,7 @@
    }
    ```
 
-# 五、PlayerState
+# 五、PlayerState：所属队伍
 
 > 此类的存在方式与Controller类似，当玩家死亡时，不会被删除，因此可以用于存储一些与Character无关的数据，如：死亡数、杀敌数、玩家姓名、队伍数量等
 
@@ -506,4 +506,165 @@
        return ClosetActor;
    }
 
-3. 
+# 七、PlayerState：击杀数、死亡数
+
+1. 修改`STUPlayerState`：添加击杀数、死亡数的数据记录
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUPlayerState : public APlayerState {
+       ...
+   
+   public:
+       void AddKill() { KillsNum++; }
+       int32 GetKillsNum() const { return KillsNum; }
+       void AddDeath() { DeathsNum++; }
+       int32 GetDeathsNum() const { return DeathsNum; }
+   
+       void LogInfo();
+   
+   private:
+       int32 KillsNum = 0;
+       int32 DeathsNum = 0;
+   };
+   ```
+
+   ```c++
+   #include "Player/STUPlayerState.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUPlayerState, All, All);
+   
+   void ASTUPlayerState::LogInfo() {
+       UE_LOG(LogSTUPlayerState, Display, TEXT("TeamID: %i, Kills: %i, Deaths: %i"), TeamID, KillsNum, DeathsNum);
+   }
+
+2. 修改`STUGameModeBase`：添加A杀死B的逻辑
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUGameModeBase : public AGameModeBase {
+       ...
+   public:
+       // 击杀事件
+       void Killed(AController* KillerController, AController* VictimController);
+   
+   private:
+       // 输出角色信息到日志
+       void LogPlayerInfo();
+   };
+   ```
+
+   ```c++
+   void ASTUGameModeBase::Killed(AController* KillerController, AController* VictimController) {
+       const auto KillerPlayerState = KillerController ? Cast<ASTUPlayerState>(KillerController->PlayerState) : nullptr;
+       const auto VictimPlayerState = VictimController ? Cast<ASTUPlayerState>(VictimController->PlayerState) : nullptr;
+   
+       if (KillerPlayerState) KillerPlayerState->AddKill();
+       if (VictimPlayerState) VictimPlayerState->AddDeath();
+   }
+   
+   void ASTUGameModeBase::LogPlayerInfo() {
+       if (!GetWorld()) return;
+   
+       for (auto It = GetWorld()->GetControllerIterator(); It; ++It) {
+           const auto Controller = It->Get();
+           if (!Controller) continue;
+   
+           const auto PlayerState = Cast<ASTUPlayerState>(Controller->PlayerState);
+           if (!PlayerState) continue;
+   
+           PlayerState->LogInfo();
+       }
+   }
+
+3. 修改`STUHealthComponent`：添加被A杀死的逻辑
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent {
+       ...
+   
+   private:
+       // 被杀死
+       void Killed(AController* KillerController);
+   };
+   ```
+
+   ```c++
+   #include "STUGameModeBase.h"
+   
+   void USTUHealthComponent::OnTakeAnyDamageHandler(
+       AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser) {
+       if (Damage <= 0.0f || IsDead() || !GetWorld()) return;
+   
+       SetHealth(Health - Damage);
+   
+       // 角色受伤时, 停止自动恢复
+       GetWorld()->GetTimerManager().ClearTimer(HealTimerHandle);
+       
+       // 角色死亡后, 广播OnDeath委托
+       if (IsDead()) {
+           Killed(InstigatedBy);
+           OnDeath.Broadcast();
+       }
+       // 角色未死亡且可以自动恢复
+       else if (AutoHeal) {
+           GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, this, &USTUHealthComponent::HealUpdate, HealUpdateTime, true, HealDelay);
+       }
+   
+       // 相机抖动
+       PlayCameraShake();
+   }
+   
+   void USTUHealthComponent::Killed(AController* KillerController) {
+       if (!GetWorld()) return;
+   
+       const auto GameMode = Cast<ASTUGameModeBase>(GetWorld()->GetAuthGameMode());
+       if (!GameMode) return;
+   
+       const auto Player = Cast<APawn>(GetOwner());
+       if (!Player) return;
+   
+       const auto VictimController = Player->GetController();
+       GameMode->Killed(KillerController, VictimController);
+   }
+
+4. 修改`STURifleWeapon/MakeDamage()`：造成伤害时，使用AController*传递造成伤害的控制器
+
+   ```c++
+   void ASTURifleWeapon::MakeDamage(const FHitResult& HitResult) {
+       const auto DamageActor = HitResult.GetActor();
+       if (!DamageActor) return;
+   
+       DamageActor->TakeDamage(DamageAmount, FDamageEvent{}, GetController(), this);
+   }
+   
+   AController* ASTURifleWeapon::GetController() const {
+       const auto Pawn = Cast<APawn>(GetOwner());
+       return Pawn ? Pawn->GetController() : nullptr;
+   }
+   ```
+
+5. 修改`STUBaseWeapon/GetPlayerViewPoint`：删除`GetPlayerController()`函数
+
+   ```c++
+   bool ASTUBaseWeapon::GetPlayerViewPoint(FVector& ViewLocation, FRotator& ViewRotation) const {
+       const auto STUCharacter = Cast<ACharacter>(GetOwner());
+       if (!STUCharacter) return false;
+   
+       // 如果为玩家控制, 则返回玩家的朝向
+       if (STUCharacter->IsPlayerControlled()) {
+           const auto Controller = STUCharacter->GetController<APlayerController>();
+           if (!Controller) return false;
+           Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
+       } 
+       // 如果为AI控制, 则返回枪口的朝向
+       else {
+           ViewLocation = GetMuzzleWorldLocation();
+           ViewRotation = WeaponMesh->GetSocketRotation(MuzzleSocketName);
+       }
+   
+       return true;
+   }
+   ```
+
