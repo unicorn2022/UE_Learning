@@ -257,4 +257,188 @@
    }
    ```
 
-5. 
+# 五、GameMode：PlayerState
+
+> 此类的存在方式与Controller类似，当玩家死亡时，不会被删除，因此可以用于存储一些与Character无关的数据，如：死亡数、杀敌数、玩家姓名、队伍数量等
+
+1. 创建C++类`STUPlayerState`，继承于`玩家状态`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Player`
+
+2. 修改`STUPlayerState`：
+
+   ```c++
+   // Shoot Them Up Game, All Rights Reserved
+   
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "GameFramework/PlayerState.h"
+   #include "STUPlayerState.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUPlayerState : public APlayerState {
+       GENERATED_BODY()
+   
+   public:
+       void SetTeamID(int32 ID) { TeamID = ID; }
+       int32 GetTeamID() const { return TeamID; }
+   
+       void SetTeamColor(const FLinearColor& Color) { TeamColor = Color; }
+       FLinearColor GetTeamColor() const { return TeamColor; }
+   
+   private:
+       int32 TeamID;
+       FLinearColor TeamColor;
+   };
+   ```
+
+3. 修改`STUCoreTypes/FGameData`：添加队伍颜色相关信息
+
+   ```c++
+   USTRUCT(BlueprintType)
+   struct FGameData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 玩家数量
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game", meta = (ClampMin = "1", ClampMax = "100"))
+       int32 PlayersNum = 2;
+   
+       // 回合数量
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game", meta = (ClampMin = "1", ClampMax = "10"))
+       int32 RoundsNum = 4;
+   
+       // 一回合的时间(s)
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game", meta = (ClampMin = "3", ClampMax = "300"))
+       int32 RoundTime = 10;
+   
+       // 默认队伍颜色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+       FLinearColor DefaultTeamColor = FLinearColor::Red;
+   
+       // 队伍可选颜色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+       TArray<FLinearColor> TeamColors;
+   };
+   ```
+
+4. 修改`STUGameModeBase`：游戏开始时，创建队伍信息
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUGameModeBase : public AGameModeBase {
+       ...
+   
+   private:
+       // 生成AI
+       void SpawnBots();
+       // 创建队伍信息
+       void CreateTeamsInfo();
+       // 根据TeamID, 决定TeamColor
+       FLinearColor DetermineColorByTeamID(int32 TeamID);
+       // 设置玩家颜色
+       void SetPlayerColor(AController* Controller);
+   
+   };
+   ```
+
+   ```c++
+   ASTUGameModeBase::ASTUGameModeBase() {
+       DefaultPawnClass = ASTUBaseCharacter::StaticClass();
+       PlayerControllerClass = ASTUPlayerController::StaticClass();
+       HUDClass = ASTUGameHUD::StaticClass();
+       PlayerStateClass = ASTUPlayerState::StaticClass();
+   }
+   
+   void ASTUGameModeBase::StartPlay() {
+       Super::StartPlay();
+   
+       SpawnBots();
+       CreateTeamsInfo();
+   
+       // 初始化第一回合
+       CurrentRound = 1;
+       StartRound();
+   }
+   
+   void ASTUGameModeBase::CreateTeamsInfo() {
+       if (!GetWorld()) return;
+   
+       int32 TeamID = 1;
+       for (auto It = GetWorld()->GetControllerIterator(); It; ++It) {
+           const auto Controller = It->Get();
+           if (!Controller) continue;
+           
+           const auto PlayerState = Cast<ASTUPlayerState>(Controller->PlayerState);
+           if (!PlayerState) continue;
+   
+           PlayerState->SetTeamID(TeamID);
+           PlayerState->SetTeamColor(DetermineColorByTeamID(TeamID));
+           SetPlayerColor(Controller);
+   
+           TeamID = TeamID == 1 ? 2 : 1;
+       }
+   }
+   
+   FLinearColor ASTUGameModeBase::DetermineColorByTeamID(int32 TeamID) {
+       if (TeamID <= GameData.TeamColors.Num()) {
+           return GameData.TeamColors[TeamID - 1];
+       } 
+       else {
+           UE_LOG(LogSTUGameModeBase, Warning, TEXT("No color for team id: %i, set to default: %s"), TeamID,
+               *GameData.DefaultTeamColor.ToString());
+           return GameData.DefaultTeamColor;
+       }
+   }
+   
+   void ASTUGameModeBase::SetPlayerColor(AController* Controller) {
+       if (!Controller) return;
+   
+       const auto Character = Cast<ASTUBaseCharacter>(Controller->GetPawn());
+       if (!Character) return;
+   
+       const auto PlayerState = Cast<ASTUPlayerState>(Controller->PlayerState);
+       if (!PlayerState) return;
+   
+       Character->SetPlayerColor(PlayerState->GetTeamColor());
+   }
+   
+   void ASTUGameModeBase::ResetOnePlayer(AController* Controller) {
+       // 当Controller已经控制Character时, RestartPlayer时, SpawnRotation会直接使用当前控制的角色的Rotation
+       // 因此需要将当前控制的角色Reset()一下, 实现重开的效果
+       if (Controller && Controller->GetPawn()) {
+           Controller->GetPawn()->Reset();
+       }
+   
+       RestartPlayer(Controller);
+       SetPlayerColor(Controller);
+   }
+
+5. 修改`STUBaseCharacter`：添加`SetPlayerColor()`
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBaseCharacter : public ACharacter {
+       ...
+   
+   protected:
+       // 角色材质的颜色属性名
+       UPROPERTY(EditDefaultsOnly, Category = "Damage")
+       FName MaterialColorName = "Paint Color";
+   
+   public:
+       // 设置角色的颜色
+       void SetPlayerColor(const FLinearColor& Color);
+   };
+   ```
+
+   ```c++
+   void ASTUBaseCharacter::SetPlayerColor(const FLinearColor& Color) {
+       const auto MaterialInst = GetMesh()->CreateAndSetMaterialInstanceDynamic(0);
+       if (!MaterialInst) return;
+   
+       MaterialInst->SetVectorParameterValue(MaterialColorName, Color);
+   }
+
+6. 修改`BP_STUGameModeBase`：设置`TeamColor`
+
