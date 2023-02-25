@@ -8,7 +8,7 @@
 2. 还可以计算各种游戏统计信息
 3. 每个GameMode与一个level相关联
 
-# 二、GameMode：动态创建NPC
+# 二、动态创建NPC
 
 1. 修改`STUCoreTypes.h`：添加`FGameData`
 
@@ -108,7 +108,7 @@
        }
    }
 
-# 三、GameMode：回合计时器
+# 三、回合计时器
 
 1. 修改`STUCoreTypes.h/FGameData`：
 
@@ -188,7 +188,7 @@
    }
    ```
 
-# 四、GameMode：回合开始时重新生成角色
+# 四、回合开始时重新生成角色
 
 1. 修改`STUGameModeBase`：
 
@@ -257,7 +257,7 @@
    }
    ```
 
-# 五、GameMode：PlayerState
+# 五、PlayerState
 
 > 此类的存在方式与Controller类似，当玩家死亡时，不会被删除，因此可以用于存储一些与Character无关的数据，如：死亡数、杀敌数、玩家姓名、队伍数量等
 
@@ -442,3 +442,68 @@
 
 6. 修改`BP_STUGameModeBase`：设置`TeamColor`
 
+# 六、给角色分配团队
+
+> 在`STUAIPerceptionComponent`中，可以判断观察到的Actor是否为敌人
+
+1. 修改`STUUtils`：判断两个Controller是否为敌人
+
+   ```c++
+   #pragma once
+   #include "Player/STUPlayerState.h"
+   
+   class STUUtils {
+   public:
+       ...
+       bool static AreEnemies(AController* Controller1, AController* Controller2) {
+           if (!Controller1 || !Controller2 || Controller1 == Controller2) return false;
+           
+           const auto PlayerState1 = Cast<ASTUPlayerState>(Controller1->PlayerState);
+           const auto PlayerState2 = Cast<ASTUPlayerState>(Controller2->PlayerState);
+           if (!PlayerState1 || !PlayerState2) return false;
+   
+           return PlayerState1->GetTeamID() != PlayerState2->GetTeamID();
+       }
+   };
+   ```
+
+2. 修改`STUAIPerceptionComponent/GetClosetEnemy()`：
+
+   ```c++
+   AActor* USTUAIPerceptionComponent::GetClosetEnemy() const {
+       // 获取AI视野内的所有Actor
+       TArray<AActor*> PerciveActors;
+       GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), PerciveActors);
+       if (PerciveActors.Num() == 0) return nullptr;
+   
+       // 获取当前角色的Pawn
+       const auto Controller = Cast<AAIController>(GetOwner());
+       if (!Controller) return nullptr;
+       const auto Pawn = Controller->GetPawn();
+       if (!Pawn) return nullptr;
+   
+       // 获取距离当前角色最近的Character
+       float ClosetDistance = MAX_FLT;
+       AActor* ClosetActor = nullptr;
+       for (const auto PerciveActor : PerciveActors) {
+           // 判断character是否已死亡
+           const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(PerciveActor);
+           if (!HealthComponent || HealthComponent->IsDead()) continue;
+   
+           // 判断两个character是否为敌人
+           const auto PercivePawn = Cast<APawn>(PerciveActor);
+           const auto AreEnemies = PercivePawn && STUUtils::AreEnemies(Controller, PercivePawn->Controller);
+           if (!AreEnemies) continue;
+           
+           // 更新距离信息
+           const auto CurrentDistance = (PerciveActor->GetActorLocation() - Pawn->GetActorLocation()).Size();
+           if (CurrentDistance < ClosetDistance) {
+               ClosetDistance = CurrentDistance;
+               ClosetActor = PerciveActor;
+           }
+       }
+   
+       return ClosetActor;
+   }
+
+3. 
