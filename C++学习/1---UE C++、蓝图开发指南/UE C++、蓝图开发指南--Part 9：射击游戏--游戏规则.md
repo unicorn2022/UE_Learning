@@ -967,4 +967,70 @@
    }
    ```
 
-6. 
+
+# 十、重生时的UI
+
+1. 创建C++类`STUSpectatorWidget`，继承于`UserWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
+
+2. 修改`STURespawnComponent`：添加`RespawnTime`的getter
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTURespawnComponent : public UActorComponent {
+       ...
+   
+   public:
+       int32 GetRespawnCountDown() const { return RespawnCountDown; }
+   
+       // 正在重生
+       bool IsRespawnInProgress() const;
+   };
+   ```
+
+   ```c++
+   bool USTURespawnComponent::IsRespawnInProgress() const {
+       if (!GetWorld()) return false;
+       return GetWorld()->GetTimerManager().IsTimerActive(RespawnTimerHandle);
+   }
+
+3. 修改`STUSpectatorWidget`：
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUSpectatorWidget.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUSpectatorWidget : public UUserWidget {
+       GENERATED_BODY()
+   
+   public:
+       UFUNCTION(BlueprintCallable, Category = "UI")
+       bool GetRespawnTime(int32& CountDownTime) const;
+   };
+   ```
+
+   ```c++
+   #include "UI/STUSpectatorWidget.h"
+   #include "STUUtils.h"
+   #include "Components/STURespawnComponent.h"
+   
+   bool USTUSpectatorWidget::GetRespawnTime(int32& CountDownTime) const {
+       const auto RespawnComponent = STUUtils::GetSTUPlayerComponent<USTURespawnComponent>(GetOwningPlayer());
+       if (!RespawnComponent || !RespawnComponent->IsRespawnInProgress()) return false;
+   
+       CountDownTime = RespawnComponent->GetRespawnCountDown();
+       return true;
+   }
+
+4. 修改`WBP_SpectatorHUD`：
+
+   1. 将父类修改为`STUSpectatorWidget`
+   2. 为文本添加一个绑定
+
+   <img src="AssetMarkdown/image-20230227194002411.png" alt="image-20230227194002411" style="zoom:80%;" />
+
