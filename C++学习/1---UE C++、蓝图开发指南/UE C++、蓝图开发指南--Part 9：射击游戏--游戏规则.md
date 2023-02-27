@@ -1034,3 +1034,57 @@
 
    <img src="AssetMarkdown/image-20230227194002411.png" alt="image-20230227194002411" style="zoom:80%;" />
 
+# 十一、游戏结束后，停止所有的pawn
+
+1. 修改`STUGameModeBase`：
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUGameModeBase : public AGameModeBase {
+       ...
+   
+   private:
+       // 游戏结束
+       void GameOver();
+   };
+   ```
+
+   ```c++
+   void ASTUGameModeBase::GameTimerUpdate() {
+       UE_LOG(LogSTUGameModeBase, Display, TEXT("Time: %i / Round: %i/%i"), RoundCountDown, CurrentRound, GameData.RoundsNum);
+   
+       RoundCountDown--;
+   
+       // 当前回合结束
+       if (RoundCountDown == 0) {
+           // 停止计时器
+           GetWorldTimerManager().ClearTimer(GameRoundTimerHandle);
+           // 回合数+1
+           CurrentRound++;
+   
+           // 仍有剩余回合
+           if (CurrentRound <= GameData.RoundsNum) {
+               ResetPlayers();
+               StartRound();
+           }
+           // 回合已经全部结束
+           else {
+               GameOver();       
+           }
+       }
+   
+   }
+   
+   void ASTUGameModeBase::GameOver() {
+       UE_LOG(LogSTUGameModeBase, Warning, TEXT("=========== Game over =========="));
+       LogPlayerInfo();
+   
+       for (auto Pawn : TActorRange<APawn>(GetWorld())) {
+           if (Pawn) {
+               Pawn->TurnOff();
+               Pawn->DisableInput(nullptr);
+           }
+       }
+   }
+
+2. 此时，当回合结束后，所有character均会被冻结，而非消失
