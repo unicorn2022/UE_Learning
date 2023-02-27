@@ -1088,3 +1088,76 @@
    }
 
 2. 此时，当回合结束后，所有character均会被冻结，而非消失
+
+# 十二、角色重生后，重新订阅OnHealthChange委托
+
+> 存在bug：角色重生后，收到伤害时屏幕不再闪烁
+>
+> 原因：UI的Initialize()函数仅会在角色创建时调用，重新生成后，我们更改了character，需要将OnHealthChanged函数重新绑定到新角色对象的委托上
+
+1. 修改`STUPlayerHUDWidget/Initialize()`：让窗口部件订阅OnNewPawn事件
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+       ...
+   private:
+       // 玩家重生时, Pawn会改变
+       void OnNewPawn(APawn* NewPawn);
+   };
+   ```
+
+   ```c++
+   bool USTUPlayerHUDWidget::Initialize() {
+       if (GetOwningPlayer()) {
+           GetOwningPlayer()->GetOnNewPawnNotifier().AddUObject(this, USTUPlayerHUDWidget::OnNewPawn);
+           // Initialize会在OnPossess之后调用, 因此需要手动调用一次
+           OnNewPawn(GetOwningPlayerPawn());
+       } 
+       return Super::Initialize();
+   }
+   
+   void USTUPlayerHUDWidget::OnNewPawn(APawn* NewPawn) {
+       // 重新订阅HealthComponent的OnHealthChanged事件
+       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(NewPawn);
+       if (HealthComponent) {
+           HealthComponent->OnHealthChanged.AddUObject(this, &USTUPlayerHUDWidget::OnHealthChanged);
+       }
+   }
+   ```
+
+2. 在`GameModeBase`中，我们可以看到角色死亡时的调用顺序
+
+   1. 调用`RestartPlayer(AController* NewPlayer)`
+   2. 调用`RestartPlayerAtPlayerStart(AController* NewPlayer, AActor* StartSpot)`
+   3. 调用`NewPlayer->SetPawn(SpawnDefaultPawnFor(NewPlayer, StartSpot))`
+      1. 在`SetPawn(APawn* InPawn)`中，会将内部的`Pawn = InPawn`
+   4. 调用`FinishRestartPlayer(NewPlayer, SpawnRotation)`
+   5. 调用`NewPlayer->Possess(NewPlayer->GetPawn())`
+      1. 调用`AController::OnPossess(InPawn)`
+      2. 如果`NewPawn != CurrentPawn`，则调用`OnNewPawn.Broadcast(NewPawn)`
+
+3. 在`UE4.6`中，`OnNewPawn`是在`OnPossess`中调用的，这种调用会使得其永远无法被正确调用，因此需要我们重写`OnPossess`函数，并在其中调用`OnNewPawn.Broadcast(GetPawn())`
+
+   1. 由于`GameModeBase`会调用`SetPawn()`函数，因此`GetPawn() == InPawn`在`OnPossess(InPawn)`中始终成立，从而不会调用`OnNewPawn.Broadcast(GetPawn())`
+
+4. 修改`STUPlayerController`：重写`OnPossess()`函数
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUPlayerController : public APlayerController {
+       ...
+   
+   protected:
+       virtual void OnPossess(APawn* InPawn) override;
+   };
+   ```
+
+   ```c++
+   void ASTUPlayerController::OnPossess(APawn* InPawn) {
+       Super::OnPossess(InPawn);
+   
+       OnNewPawn.Broadcast(InPawn);
+   }
+
+5. 
