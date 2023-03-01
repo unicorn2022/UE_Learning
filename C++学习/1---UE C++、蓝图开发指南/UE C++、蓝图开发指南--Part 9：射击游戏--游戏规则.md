@@ -1160,4 +1160,160 @@
        OnNewPawn.Broadcast(InPawn);
    }
 
-5. 
+
+# 十三、重构STUBaseCharacter
+
+1. 创建C++类`STUPlayerCharacter`，继承于`STUBaseCharacter`
+
+2. 将`STUBaseCharacter`中的一部分内容移动到`STUPlayerCharacter`
+
+   1. 移动相机组件：`UCameraComponent`、`USpringArmComponent`
+   2. 删除血量文本显示组件：`HealthTextComponent`
+   3. 重写`OnDeath()`
+   4. 移动`SetupPlayerInputConponent()`
+   5. 重写`IsRunning()`，移动相关的属性及函数
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Player/STUBaseCharacter.h"
+   #include "STUPlayerCharacter.generated.h"
+   
+   class UCameraComponent;
+   class USpringArmComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUPlayerCharacter : public ASTUBaseCharacter {
+       GENERATED_BODY()
+   
+   public:
+       // 由于CharacterMovementComponent组件是默认组件, 因此我们需要通过参数显式指定
+       ASTUPlayerCharacter(const FObjectInitializer& ObjInit);
+   
+   protected:
+       // 组件：相机的弹簧臂
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+       USpringArmComponent* SpringArmComponent;
+       // 组件：相机
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+       UCameraComponent* CameraComponent;
+   
+       // 死亡回调函数
+       virtual void OnDeath() override;
+   
+   public:
+       virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+   
+       // 判断角色是否处于奔跑状态
+       virtual bool IsRunning() const override;
+   
+   private:
+       // WS控制角色前后移动
+       bool IsMovingForward = false;
+       void MoveForward(float Amount);
+       // AD控制角色左右移动
+       void MoveRight(float Amount);
+   
+       // 左Shift控制角色开始跑动
+       bool WantsToRun = false;  // 按下Shift只能表示想要跑步, 只有当还按下W时, 才能开始跑步
+       void OnStartRunning();
+       void OnStopRunning();
+   };
+   ```
+
+   ```c++
+   #include "Player/STUPlayerCharacter.h"
+   #include "Camera/CameraComponent.h"
+   #include "Components/InputComponent.h"
+   #include "GameFramework/SpringArmComponent.h"
+   #include "Components/STUWeaponComponent.h"
+   
+   ASTUPlayerCharacter::ASTUPlayerCharacter(const FObjectInitializer& ObjInit) : Super(ObjInit) {
+       // 允许该character每一帧调用Tick()
+       PrimaryActorTick.bCanEverTick = true;
+   
+       // 创建弹簧臂组件, 并设置其父组件为根组件, 允许pawn控制旋转
+       SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>("SpringArmComponent");
+       SpringArmComponent->SetupAttachment(GetRootComponent());
+       SpringArmComponent->bUsePawnControlRotation = true;
+       SpringArmComponent->SocketOffset = FVector(0.0f, 100.0f, 80.0f);
+   
+       // 创建相机组件, 并设置其父组件为弹簧臂组件
+       CameraComponent = CreateDefaultSubobject<UCameraComponent>("CameraComponent");
+       CameraComponent->SetupAttachment(SpringArmComponent);
+   }
+   
+   // 绑定输入
+   void ASTUPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) {
+       Super::SetupPlayerInputComponent(PlayerInputComponent);
+   
+       check(PlayerInputComponent);
+   
+       // WASD控制角色移动
+       PlayerInputComponent->BindAxis("MoveForward", this, &ASTUPlayerCharacter::MoveForward);
+       PlayerInputComponent->BindAxis("MoveRight", this, &ASTUPlayerCharacter::MoveRight);
+   
+       // 鼠标控制相机移动
+       PlayerInputComponent->BindAxis("LookUp", this, &ASTUPlayerCharacter::AddControllerPitchInput);
+       PlayerInputComponent->BindAxis("TurnAround", this, &ASTUPlayerCharacter::AddControllerYawInput);
+   
+       // 空格键控制角色跳跃
+       PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ASTUPlayerCharacter::Jump);
+   
+       // 左Shift控制角色开始跑动
+       PlayerInputComponent->BindAction("Run", IE_Pressed, this, &ASTUPlayerCharacter::OnStartRunning);
+       PlayerInputComponent->BindAction("Run", IE_Released, this, &ASTUPlayerCharacter::OnStopRunning);
+   
+       // 鼠标左键控制武器开火
+       PlayerInputComponent->BindAction("Fire", IE_Pressed, WeaponComponent, &USTUWeaponComponent::StartFire);
+       PlayerInputComponent->BindAction("Fire", IE_Released, WeaponComponent, &USTUWeaponComponent::StopFire);
+   
+       // Tab键切换武器
+       PlayerInputComponent->BindAction("NextWeapon", IE_Pressed, WeaponComponent, &USTUWeaponComponent::NextWeapon);
+   
+       // R键切换弹夹
+       PlayerInputComponent->BindAction("Reload", IE_Pressed, WeaponComponent, &USTUWeaponComponent::Reload);
+   }
+   
+   // WS控制角色前后移动
+   void ASTUPlayerCharacter::MoveForward(float Amount) {
+       IsMovingForward = Amount > 0.0f;
+       if (Amount == 0.0f) return;
+       AddMovementInput(GetActorForwardVector(), Amount);
+   }
+   // AD控制角色左右移动
+   void ASTUPlayerCharacter::MoveRight(float Amount) {
+       if (Amount == 0.0f) return;
+       AddMovementInput(GetActorRightVector(), Amount);
+   }
+   // 左Shift控制角色开始跑动
+   void ASTUPlayerCharacter::OnStartRunning() {
+       WantsToRun = true;
+   }
+   void ASTUPlayerCharacter::OnStopRunning() {
+       WantsToRun = false;
+   }
+   
+   // 判断角色是否处于奔跑状态
+   bool ASTUPlayerCharacter::IsRunning() const {
+       return WantsToRun && IsMovingForward && !GetVelocity().IsZero();
+   }
+   
+   // 死亡回调函数
+   void ASTUPlayerCharacter::OnDeath() {
+       Super::OnDeath();
+       // 切换状态, 从而将pawn切换为观察者类
+       if (Controller) {
+           Controller->ChangeState(NAME_Spectating);
+       }
+   }
+   ```
+
+3. 创建蓝图类`BP_STUPlayerCharacter`，基于`STUPlayerCharacter`
+
+   1. 路径：`Player`
+   2. 将`BP_STUBaseCharacter`的设置复制给`BP_STUPlayerCharacter`
+   3. 修改`ABP_STUBaseCharacter/事件图表`中的`在奔跑`变量的赋值
+
+4. 删除`BP_STUPlayer`，将默认pawn类设置为`BP_STUPlayerCharacter`
