@@ -1317,3 +1317,94 @@
    3. 修改`ABP_STUBaseCharacter/事件图表`中的`在奔跑`变量的赋值
 
 4. 删除`BP_STUPlayer`，将默认pawn类设置为`BP_STUPlayerCharacter`
+
+# 十四、修复Camera的碰撞
+
+1. 向Camera添加一个球形碰撞，一旦该碰撞与角色的胶囊体碰撞，就设置角色为不可见
+
+2. 修改`STUPlayerCharacter`：添加球形碰撞组件，并且在组件与角色胶囊体碰撞时，将角色的Mesh设置为不可见
+
+   ```c++
+   class USphereComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUPlayerCharacter : public ASTUBaseCharacter {
+       ...
+   
+   protected:
+       // 组件：相机的球形碰撞体
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+       USphereComponent* CameraCollisionComponent;
+   
+   private:
+       // 委托：相机与角色开始重叠
+       UFUNCTION()
+       void OnCameraCollisionBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
+           int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+       // 委托：相机与角色结束重叠
+       UFUNCTION()
+       void OnCameraCollisionEndOverlap(
+           UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+       // 检查相机是否穿过角色身体
+       void CheckCameraOverlap();
+   };
+   ```
+
+   ```c++
+   #include "Components/SphereComponent.h"
+   #include "Components/CapsuleComponent.h"
+   
+   ASTUPlayerCharacter::ASTUPlayerCharacter(const FObjectInitializer& ObjInit) : Super(ObjInit) {
+       // 允许该character每一帧调用Tick()
+       PrimaryActorTick.bCanEverTick = true;
+   
+       // 创建弹簧臂组件, 并设置其父组件为根组件, 允许pawn控制旋转
+       SpringArmComponent = CreateDefaultSubobject<USpringArmComponent>("SpringArmComponent");
+       SpringArmComponent->SetupAttachment(GetRootComponent());
+       SpringArmComponent->bUsePawnControlRotation = true;
+       SpringArmComponent->SocketOffset = FVector(0.0f, 100.0f, 80.0f);
+   
+       // 创建相机组件, 并设置其父组件为弹簧臂组件
+       CameraComponent = CreateDefaultSubobject<UCameraComponent>("CameraComponent");
+       CameraComponent->SetupAttachment(SpringArmComponent);
+   
+       // 创建相机的球形碰撞体组件, 并设置其父组件为相机组件
+       CameraCollisionComponent = CreateDefaultSubobject<USphereComponent>("CameraCollisionComponent");
+       CameraCollisionComponent->SetupAttachment(CameraComponent);
+       CameraCollisionComponent->SetSphereRadius(10.0f);
+       CameraCollisionComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Overlap);
+   }
+   
+   void ASTUPlayerCharacter::BeginPlay() {
+       Super::BeginPlay();
+   
+       check(CameraCollisionComponent);
+   
+       CameraCollisionComponent->OnComponentBeginOverlap.AddDynamic(this, &ASTUPlayerCharacter::OnCameraCollisionBeginOverlap);
+       CameraCollisionComponent->OnComponentEndOverlap.AddDynamic(this, &ASTUPlayerCharacter::OnCameraCollisionEndOverlap);
+   }
+   
+   void ASTUPlayerCharacter::OnDeath() {
+       Super::OnDeath();
+       // 切换状态, 从而将pawn切换为观察者类
+       if (Controller) {
+           Controller->ChangeState(NAME_Spectating);
+       }
+   }
+   
+   void ASTUPlayerCharacter::OnCameraCollisionBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+       UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult) {
+       CheckCameraOverlap();
+   }
+   
+   void ASTUPlayerCharacter::OnCameraCollisionEndOverlap(
+       UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex) {
+       CheckCameraOverlap();
+   }
+   
+   void ASTUPlayerCharacter::CheckCameraOverlap() {
+       const auto HideMesh = CameraCollisionComponent->IsOverlappingComponent(GetCapsuleComponent());
+       GetMesh()->SetOwnerNoSee(HideMesh);
+   }
+
+3. 
