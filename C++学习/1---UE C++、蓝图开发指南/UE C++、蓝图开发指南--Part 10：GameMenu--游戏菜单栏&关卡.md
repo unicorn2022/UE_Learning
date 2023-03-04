@@ -687,4 +687,198 @@
 
    <img src="AssetMarkdown/image-20230304161523671.png" alt="image-20230304161523671" style="zoom:80%;" />
 
-4. 
+# 五、游戏主菜单
+
+1. 修改`ShootThemUp.Build.cs`：
+
+   ```c++
+   PublicIncludePaths.AddRange(new string[] { 
+       "ShootThemUp/Public/Player", 
+       "ShootThemUp/Public/Components", 
+       "ShootThemUp/Public/Dev",
+       "ShootThemUp/Public/Weapon",
+       "ShootThemUp/Public/UI",
+       "ShootThemUp/Public/Animations",
+       "ShootThemUp/Public/Pickups",
+       "ShootThemUp/Public/Weapon/Components",
+       "ShootThemUp/Public/AI",
+       "ShootThemUp/Public/AI/Tasks",
+       "ShootThemUp/Public/AI/Services",
+       "ShootThemUp/Public/AI/EQS",
+       "ShootThemUp/Public/AI/Decorators",
+       "ShootThemUp/Public/Menu",
+       "ShootThemUp/Public/Menu/UI"
+   });
+
+2. 新建文件夹`Menu`：
+
+   1. 新建关卡`MenuLevel`，并将项目的启动&默认关卡设置为`MenuLevel`
+
+3. 创建C++类`STUMenuGameModeBase`，继承于`GameModeBase`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Menu`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "GameFramework/GameModeBase.h"
+   #include "STUMenuGameModeBase.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUMenuGameModeBase : public AGameModeBase {
+       GENERATED_BODY()
+   
+   public:
+       ASTUMenuGameModeBase();
+   };
+   ```
+
+   ```c++
+   #include "Menu/STUMenuGameModeBase.h"
+   #include "Menu/STUMenuPlayerController.h"
+   #include "Menu/UI/STUMenuHUD.h"
+   
+   ASTUMenuGameModeBase::ASTUMenuGameModeBase() {
+       PlayerControllerClass = ASTUMenuPlayerController::StaticClass();
+       HUDClass = ASTUMenuHUD::StaticClass();
+   }
+   ```
+
+4. 创建C++类`STUMenuPlayerController`，继承于`PlayerController`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Menu`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "GameFramework/PlayerController.h"
+   #include "STUMenuPlayerController.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUMenuPlayerController : public APlayerController {
+       GENERATED_BODY()
+   
+   protected:
+       virtual void BeginPlay() override;
+   };
+   ```
+
+   ```c++
+   #include "Menu/STUMenuPlayerController.h"
+   
+   void ASTUMenuPlayerController::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 设置输入模式为UI, 并显示光标
+       SetInputMode(FInputModeUIOnly());
+       bShowMouseCursor = true;
+   }
+
+5. 创建C++类`STUMenuHUD`，继承于`HUD`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Menu/UI`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "GameFramework/HUD.h"
+   #include "STUMenuHUD.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUMenuHUD : public AHUD {
+       GENERATED_BODY()
+   
+   protected:
+       // Widget：菜单控件
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       TSubclassOf<UUserWidget> MenuWidgetClass;
+   
+       virtual void BeginPlay() override;
+   };
+   ```
+
+   ```c++
+   #include "Menu/UI/STUMenuHUD.h"
+   #include "Blueprint/UserWidget.h"
+   
+   void ASTUMenuHUD::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 创建菜单控件, 并添加到视图
+       if (MenuWidgetClass) {
+           const auto MenuWidget = CreateWidget<UUserWidget>(GetWorld(), MenuWidgetClass);
+           if (MenuWidget) MenuWidget->AddToViewport();
+       }
+   }
+
+6. 创建C++类`STUMenuUserWidget`，继承于`UserWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Menu/UI`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUMenuUserWidget.generated.h"
+   
+   class UButton;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUMenuUserWidget : public UUserWidget {
+       GENERATED_BODY()
+   
+   protected:
+       UPROPERTY(meta = (BindWidget))
+       UButton* StartGameButton;
+   
+       virtual void NativeOnInitialized() override;
+   
+   private:
+       UFUNCTION()
+       void OnStateGame();
+   };
+   ```
+
+   ```c++
+   #include "Menu/UI/STUMenuUserWidget.h"
+   #include "Components/Button.h"
+   #include "Kismet/GameplayStatics.h"
+   
+   void USTUMenuUserWidget::NativeOnInitialized() {
+       Super::NativeOnInitialized();
+   
+       if (StartGameButton) {
+           StartGameButton->OnClicked.AddDynamic(this, &USTUMenuUserWidget::OnStateGame);
+       }
+   }
+   
+   void USTUMenuUserWidget::OnStateGame() {
+       const FName StartupLevelName = "TestLevel";
+       UGameplayStatics::OpenLevel(this, StartupLevelName);
+   }
+
+7. 基于`STUMenuGameModeBase`，创建蓝图类`BP_STUMenuGameModeBase`
+
+   1. 路径：`Menu`
+
+8. 基于`STUMenuHUD`，创建蓝图类`BP_STUMenuHUD`
+
+   1. 路径：`Menu/UI`
+   2. `MenuWidgetClass`设置为`WBP_Menu`
+
+9. 在世界场景设置中
+
+   1. 将`游戏模式重载`，设置为`BP_STUMenuGameModeBase`
+   2. 将`HUD类`，设置为`BP_STUMenuHUD`
+
+10. 复制`WBP_GamePause`，创建控件蓝图类`WBP_Menu`
+
+    1. 修改蓝图父类为`STUMenuUserWidget`
+    2. 修改UI控件的名称
+
+11. 向场景中添加一个指数级高度雾，颜色设置为`082BCF`
+
