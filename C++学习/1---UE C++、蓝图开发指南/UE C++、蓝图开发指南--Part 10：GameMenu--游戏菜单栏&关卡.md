@@ -1131,4 +1131,335 @@
 
    <img src="AssetMarkdown/image-20230304211259923.png" alt="image-20230304211259923" style="zoom:80%;" />
 
-# 十、
+# 十、在主菜单中进行关卡选择
+
+1. 将`Content/Menu/Images`迁移到本工程中
+
+2. 创建控件蓝图`WBP_LevelItem`，用于表示某个关卡
+
+   1. 路径：`Content/Menu/UI`
+
+3. 修改`WBP_LevelItem`
+
+   1. `FrameImage`：可视性设置为`隐藏`
+   2. `LevelImage`：设置为水平、垂直居中
+   3. `SelectLevelButton`：设置为水平、垂直填充，渲染不透明度为`0`，光标为`手`
+
+   <img src="AssetMarkdown/image-20230304215428383.png" alt="image-20230304215428383" style="zoom:80%;" />
+
+4. 修改`WBP_Menu`：
+
+   <img src="AssetMarkdown/image-20230304215908952.png" alt="image-20230304215908952" style="zoom:80%;" />
+
+5. 创建C++类`STULevelItemWidget`，继承于`UserWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Menu/UI`
+
+6. 修改`STUCoreTypes`
+
+   ```c++
+   /* 主菜单 */
+   USTRUCT(BlueprintType)
+   struct FLevelData {
+       GENERATED_USTRUCT_BODY()
+   
+       // 关卡名称
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game")
+       FName LevelName = NAME_None;
+   
+       // 显示的关卡名称
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game")
+       FName LevelDisplayName = NAME_None;
+   
+       // 关卡缩略图
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Game")
+       UTexture2D* LevelThumb;
+   };
+   // 委托：选择了某个关卡
+   DECLARE_MULTICAST_DELEGATE_OneParam(FOnLevelSelectedSignature, const FLevelData&);
+   ```
+
+7. 修改`STUGameInstance`：添加关卡相关的数据
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Engine/GameInstance.h"
+   #include "STUCoreTypes.h"
+   #include "STUGameInstance.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGameInstance : public UGameInstance {
+       GENERATED_BODY()
+   
+   public:
+       FLevelData GetStartupLevel() const { return StartupLevel; }
+       void SetStartupLevel(const FLevelData& Data) { StartupLevel = Data; }
+   
+       TArray<FLevelData> GetLevelsData() const { return LevelsData; }
+   
+       FName GetMenuLevelName() const { return MenuLevelName; }
+   
+   protected:
+        // 所有关卡的相关信息(ToolTip为显示在UE中的提示信息)
+       UPROPERTY(EditDefaultsOnly, Category = "Game", meta = (ToolTip = "Level name must be unique!!!"))
+       TArray<FLevelData> LevelsData;
+   
+       // 主菜单关卡的名称
+       UPROPERTY(EditDefaultsOnly, Category = "Game")
+       FName MenuLevelName = NAME_None;
+   
+   private:
+       FLevelData StartupLevel;
+   };
+
+8. 修改`STULevelItemWidget`：设置对应控件，并广播选中事件
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUCoreTypes.h"
+   #include "STULevelItemWidget.generated.h"
+   
+   class UButton;
+   class UTextBlock;
+   class UImage;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTULevelItemWidget : public UUserWidget {
+       GENERATED_BODY()
+   
+   public:
+       FOnLevelSelectedSignature OnLevelSelected;
+   
+       void SetLevelData(const FLevelData& Data);
+       FLevelData GetLevelData() const { return LevelData; }
+   
+       void SetSelected(bool IsSelected);
+   
+   protected:
+       UPROPERTY(meta = (BindWidget))
+       UButton* LevelSelectButton;
+   
+       UPROPERTY(meta = (BindWidget))
+       UTextBlock* LevelNameTextBlock;
+   
+       UPROPERTY(meta = (BindWidget))
+       UImage* LevelImage = nullptr;
+   
+       UPROPERTY(meta = (BindWidget))
+       UImage* FrameImage;
+   
+       virtual void NativeOnInitialized() override;
+   
+   private:
+       FLevelData LevelData;
+   
+       UFUNCTION()
+       void OnLevelItemClicked();
+   };
+   ```
+
+   ```c++
+   #include "Menu/UI/STULevelItemWidget.h"
+   #include "Components/Button.h"
+   #include "Components/TextBlock.h"
+   #include "Components/Image.h"
+   
+   void USTULevelItemWidget::NativeOnInitialized() {
+       Super::NativeOnInitialized();
+   
+       if (LevelSelectButton) {
+           LevelSelectButton->OnClicked.AddDynamic(this, &USTULevelItemWidget::OnLevelItemClicked);
+       }
+   }
+   
+   void USTULevelItemWidget::OnLevelItemClicked() {
+       OnLevelSelected.Broadcast(LevelData);
+   }
+   
+   void USTULevelItemWidget::SetLevelData(const FLevelData& Data) {
+       LevelData = Data;
+   
+       if (LevelNameTextBlock) {
+           LevelNameTextBlock->SetText(FText::FromName(Data.LevelDisplayName));
+       }
+   
+       if (LevelImage){
+           LevelImage->SetBrushFromTexture(Data.LevelThumb);    
+       } 
+   }
+   
+   void USTULevelItemWidget::SetSelected(bool IsSelected) {
+       if (FrameImage) {
+           FrameImage->SetVisibility(IsSelected ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
+       }
+   }
+
+9. 修改`STUMenuUserWidget`：创建`STULevelItemWidget`控件
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUCoreTypes.h"
+   #include "STUMenuUserWidget.generated.h"
+   
+   class UButton;
+   class UHorizontalBox;
+   class USTUGameInstance;
+   class USTULevelItemWidget;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUMenuUserWidget : public UUserWidget {
+       GENERATED_BODY()
+   
+   protected:
+       // 开始游戏按钮
+       UPROPERTY(meta = (BindWidget))
+       UButton* StartGameButton;
+   
+       // 退出游戏按钮
+       UPROPERTY(meta = (BindWidget))
+       UButton* QuitGameButton;
+   
+       // 水平框：关卡选择
+       UPROPERTY(meta = (BindWidget))
+       UHorizontalBox* LevelItemBox;
+   
+       // Widget：单个关卡
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       TSubclassOf<UUserWidget> LevelItemWidgetClass;
+   
+   
+       virtual void NativeOnInitialized() override;
+   
+   private:
+       // 单个关卡选择控件
+       UPROPERTY()
+       TArray<USTULevelItemWidget*> LevelItemWidgets;
+   
+       UFUNCTION()
+       void OnStartGame();
+   
+       UFUNCTION()
+       void OnQuitGame();
+   
+       // 初始化关卡选择控件
+       void InitLevelItems();
+       // 委托：当前关卡被选中
+       void OnLevelSelected(const FLevelData& Data);
+       USTUGameInstance* GetSTUGameInstance() const;
+   };
+   ```
+
+   ```c++
+   #include "Menu/UI/STUMenuUserWidget.h"
+   #include "Menu/UI/STULevelItemWidget.h"
+   #include "Components/Button.h"
+   #include "Components/HorizontalBox.h"
+   #include "Kismet/GameplayStatics.h"
+   #include "STUGameInstance.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUMenuUserWidget, All, All)
+   
+   void USTUMenuUserWidget::NativeOnInitialized() {
+       Super::NativeOnInitialized();
+   
+       if (StartGameButton) {
+           StartGameButton->OnClicked.AddDynamic(this, &USTUMenuUserWidget::OnStartGame);
+       }
+   
+       if (QuitGameButton) {
+           QuitGameButton->OnClicked.AddDynamic(this, &USTUMenuUserWidget::OnQuitGame);
+       }
+   
+       // 初始化关卡选择控件
+       InitLevelItems();
+   }
+   
+   // 初始化关卡选择控件
+   void USTUMenuUserWidget::InitLevelItems() {
+       const auto STUGameInstance = GetSTUGameInstance();
+       if (!STUGameInstance) return;
+   
+       checkf(STUGameInstance->GetLevelsData().Num() != 0, TEXT("Levels data must not be empty!!!"));
+   
+       // 清除水平框中的内容
+       if (!LevelItemBox) return;
+       LevelItemBox->ClearChildren();
+   
+       // 针对每一个LevelData, 创建一个控件
+       for (auto LevelData : STUGameInstance->GetLevelsData()) {
+           const auto LevelItemWidget = CreateWidget<USTULevelItemWidget>(GetWorld(), LevelItemWidgetClass);
+           if (!LevelItemWidget) continue;
+   
+           // 设置关卡信息
+           LevelItemWidget->SetLevelData(LevelData);
+           LevelItemWidget->OnLevelSelected.AddUObject(this, &USTUMenuUserWidget::OnLevelSelected);
+   
+           // 将控件添加到水平框中
+           LevelItemBox->AddChild(LevelItemWidget);
+           LevelItemWidgets.Add(LevelItemWidget);
+       }
+   
+       // 没有启动关卡：将关卡设置为第0个
+       if (STUGameInstance->GetStartupLevel().LevelName.IsNone()) {
+           OnLevelSelected(STUGameInstance->GetLevelsData()[0]);
+       }
+       // 从游戏中返回时, 会有启动关卡, 因此要选中原来的关卡
+       else {
+           OnLevelSelected(STUGameInstance->GetStartupLevel());
+       }
+   }
+   
+   void USTUMenuUserWidget::OnLevelSelected(const FLevelData& Data) {
+       const auto STUGameInstance = GetSTUGameInstance();
+       if (!STUGameInstance) return;
+   
+       // 将选中的关卡设置为启动关卡
+       STUGameInstance->SetStartupLevel(Data);
+   
+       for (auto LevelItemWidget : LevelItemWidgets) {
+           if (!LevelItemWidget) continue;
+           const auto IsSelected = Data.LevelName == LevelItemWidget->GetLevelData().LevelName;
+           LevelItemWidget->SetSelected(IsSelected);
+       }
+   }
+   
+   void USTUMenuUserWidget::OnStartGame() {
+       const auto STUGameInstance = GetSTUGameInstance();
+       if (!STUGameInstance) return;
+   
+       UGameplayStatics::OpenLevel(this, STUGameInstance->GetStartupLevel().LevelName);
+   }
+   
+   void USTUMenuUserWidget::OnQuitGame() {
+       UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, true);
+   }
+   
+   USTUGameInstance* USTUMenuUserWidget::GetSTUGameInstance() const {
+       if (!GetWorld()) return nullptr;
+       return GetWorld()->GetGameInstance<USTUGameInstance>();
+   }
+   ```
+
+10. 修改`WBP_LevelItem`
+
+    1. 修改蓝图父类为`STULevelItemWidget`
+    2. 修改控件名称
+
+    <img src="AssetMarkdown/image-20230304231232262.png" alt="image-20230304231232262" style="zoom:80%;" />
+
+11. 修改`WBP_Menu`
+
+    1. 修改控件名称
+    2. 将`LevelItemWidgetClass`设置为`WBP_LevelItem`
+
+    <img src="AssetMarkdown/image-20230304231341652.png" alt="image-20230304231341652" style="zoom:80%;" />
+
+12. 
