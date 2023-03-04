@@ -882,3 +882,65 @@
 
 11. 向场景中添加一个指数级高度雾，颜色设置为`082BCF`
 
+# 六、游戏实例
+
+> 1. 此类的对象是在游戏开始时创建的，并且在我们的游戏运行时一直可以使用
+> 2. 在此类中，可以方便地存储设置以及不依赖于特定关卡的各种信息
+> 3. 并且可以随时对其进行读取或写入
+
+1. 创建C++类`STUGameInstance`，继承于`GameInstance`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Engine/GameInstance.h"
+   #include "STUGameInstance.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGameInstance : public UGameInstance {
+       GENERATED_BODY()
+   
+   public:
+       FString TestString = "Hello Game!";
+   };
+
+2. 修改`STUMenuPlayerController/BeginPlay()`
+
+   ```c++
+   void ASTUMenuPlayerController::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 设置输入模式为UI, 并显示光标
+       SetInputMode(FInputModeUIOnly());
+       bShowMouseCursor = true;
+   
+       GetWorld()->GetGameInstance<USTUGameInstance>()->TestString = "Menu level say hello!";
+   }
+   ```
+
+3. 修改`ASTUGameModeBase/StartPlay()`
+
+   ```c++
+   void ASTUGameModeBase::StartPlay() {
+       Super::StartPlay();
+   
+       UE_LOG(LogSTUGameModeBase, Display, TEXT("%s"), *GetWorld()->GetGameInstance<USTUGameInstance>()->TestString);
+   
+       SpawnBots();
+       CreateTeamsInfo();
+   
+       CurrentRound = 1;
+       StartRound();
+   
+       SetMatchState(ESTUMatchState::InProgress);
+   }
+   ```
+
+4. 基于`STUGameInstance`，创建蓝图类`BP_STUGameInstance`
+
+   1. 路径：`Content`
+
+5. 在项目设置中，修改`游戏实例类`为`BP_STUGameInstance`
