@@ -828,7 +828,7 @@
    class UButton;
    
    UCLASS()
-   class SHOOTTHEMUP_API USTUMenuUserWidget : public UUserWidget {
+   class SHOOTTHEMUP_API STUMenuUserWidget : public UUserWidget {
        GENERATED_BODY()
    
    protected:
@@ -848,15 +848,15 @@
    #include "Components/Button.h"
    #include "Kismet/GameplayStatics.h"
    
-   void USTUMenuUserWidget::NativeOnInitialized() {
+   void STUMenuUserWidget::NativeOnInitialized() {
        Super::NativeOnInitialized();
    
        if (StartGameButton) {
-           StartGameButton->OnClicked.AddDynamic(this, &USTUMenuUserWidget::OnStartGame);
+           StartGameButton->OnClicked.AddDynamic(this, &STUMenuUserWidget::OnStartGame);
        }
    }
    
-   void USTUMenuUserWidget::OnStartGame() {
+   void STUMenuUserWidget::OnStartGame() {
        const FName StartupLevelName = "TestLevel";
        UGameplayStatics::OpenLevel(this, StartupLevelName);
    }
@@ -970,10 +970,10 @@
    };
    ```
 
-2. 修改`STUMenuWidget/OnStartGame()`：根据GameInstance中的值打开关卡
+2. 修改`STUMenuUserWidget/OnStartGame()`：根据GameInstance中的值打开关卡
 
    ```c++
-   void USTUMenuUserWidget::OnStartGame() {
+   void STUMenuUserWidget::OnStartGame() {
        if (!GetWorld()) return;
    
        const auto STUGameInstance = GetWorld()->GetGameInstance<USTUGameInstance>();
@@ -1089,4 +1089,46 @@
 
    <img src="AssetMarkdown/image-20230304210035344.png" alt="image-20230304210035344" style="zoom:80%;" />
 
-6. 
+# 九、退出游戏按钮
+
+1. 修改`STUMenuUserWidget`：添加退出游戏按钮
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUMenuUserWidget : public UUserWidget {
+       ...
+   
+   protected:
+       // 退出游戏按钮
+       UPROPERTY(meta = (BindWidget))
+       UButton* QuitGameButton;
+   
+   private:
+       UFUNCTION()
+       void OnQuitGame();
+   };
+   ```
+
+   ```c++
+   #include "Kismet/KismetSystemLibrary.h"
+   
+   void USTUMenuUserWidget::NativeOnInitialized() {
+       Super::NativeOnInitialized();
+   
+       if (StartGameButton) {
+           StartGameButton->OnClicked.AddDynamic(this, &STUMenuUserWidget::OnStartGame);
+       }
+       if (QuitGameButton) {
+           QuitGameButton->OnClicked.AddDynamic(this, &STUMenuUserWidget::OnQuitGame);
+       }
+   }
+   
+   void USTUMenuUserWidget::OnQuitGame() {
+       UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, true);
+   }
+
+2. 修改`WBP_Menu`：添加退出按钮
+
+   <img src="AssetMarkdown/image-20230304211259923.png" alt="image-20230304211259923" style="zoom:80%;" />
+
+# 十、
