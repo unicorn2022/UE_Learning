@@ -839,7 +839,7 @@
    
    private:
        UFUNCTION()
-       void OnStateGame();
+       void OnStartGame();
    };
    ```
 
@@ -852,11 +852,11 @@
        Super::NativeOnInitialized();
    
        if (StartGameButton) {
-           StartGameButton->OnClicked.AddDynamic(this, &USTUMenuUserWidget::OnStateGame);
+           StartGameButton->OnClicked.AddDynamic(this, &USTUMenuUserWidget::OnStartGame);
        }
    }
    
-   void USTUMenuUserWidget::OnStateGame() {
+   void USTUMenuUserWidget::OnStartGame() {
        const FName StartupLevelName = "TestLevel";
        UGameplayStatics::OpenLevel(this, StartupLevelName);
    }
@@ -944,3 +944,47 @@
    1. 路径：`Content`
 
 5. 在项目设置中，修改`游戏实例类`为`BP_STUGameInstance`
+
+# 七、在GameInstance中存储开始关卡的名称
+
+1. 修改`STUGameInstance`：存储开始关卡的名称
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Engine/GameInstance.h"
+   #include "STUGameInstance.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGameInstance : public UGameInstance {
+       GENERATED_BODY()
+   
+   public:
+       FName GetStartupLevelName() const { return StartupLevelName; }
+   
+   protected:
+       // 开始关卡的名称
+       UPROPERTY(EditDefaultsOnly, Category = "Game")
+       FName StartupLevelName = NAME_None;
+   };
+   ```
+
+2. 修改`STUMenuWidget/OnStartGame()`：根据GameInstance中的值打开关卡
+
+   ```c++
+   void USTUMenuUserWidget::OnStartGame() {
+       if (!GetWorld()) return;
+   
+       const auto STUGameInstance = GetWorld()->GetGameInstance<USTUGameInstance>();
+       if (!STUGameInstance) return;
+   
+       if (STUGameInstance->GetStartupLevelName().IsNone()) {
+           UE_LOG(LogSTUMenuUserWidget, Error, TEXT("Level name is NONE"));
+           return;
+       }
+   
+       UGameplayStatics::OpenLevel(this, STUGameInstance->GetStartupLevelName());
+   }
+
+3. 修改`BP_STUGameInstance`中的`StartupLevelName`为`TestLevel`
