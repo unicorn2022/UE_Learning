@@ -988,3 +988,105 @@
    }
 
 3. 修改`BP_STUGameInstance`中的`StartupLevelName`为`TestLevel`
+
+# 八、游戏暂停/结束时返回到MenuLevel
+
+1. 创建C++类`STUGoToMenuWidget`，继承于`UserWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUGoToMenuWidget.generated.h"
+   
+   class UButton;
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGoToMenuWidget : public UUserWidget {
+       GENERATED_BODY()
+   protected:
+       UPROPERTY(meta = (BindWidget))
+       UButton* GoToMenuButton;
+   
+       virtual void NativeOnInitialized() override;
+   
+   private:
+       UFUNCTION()
+       void OnGoToMenu();
+   };
+   ```
+
+   ```c++
+   #include "UI/STUGoToMenuWidget.h"
+   #include "Components/Button.h"
+   #include "Kismet/GameplayStatics.h"
+   #include "STUGameInstance.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUGoToMenuWidget, All, All)
+   
+   void USTUGoToMenuWidget::NativeOnInitialized() {
+       Super::NativeOnInitialized();
+   
+       if (GoToMenuButton) {
+           GoToMenuButton->OnClicked.AddDynamic(this, &USTUGoToMenuWidget::OnGoToMenu);
+       }
+   }
+   
+   void USTUGoToMenuWidget::OnGoToMenu() {
+       if (!GetWorld()) return;
+   
+       const auto STUGameInstance = GetWorld()->GetGameInstance<USTUGameInstance>();
+       if (!STUGameInstance) return;
+   
+       if (STUGameInstance->GetMenuLevelName().IsNone()) {
+           UE_LOG(LogSTUGoToMenuWidget, Error, TEXT("Menu level name is NONE"));
+           return;
+       }
+   
+       UGameplayStatics::OpenLevel(this, STUGameInstance->GetMenuLevelName());
+   }
+
+2. 修改`STUGameInstance`：存储主菜单关卡名称
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGameInstance : public UGameInstance {
+       GENERATED_BODY()
+   
+   public:
+       FName GetStartupLevelName() const { return StartupLevelName; }
+       FName GetMenuLevelName() const { return MenuLevelName; }
+   
+   protected:
+       // 开始关卡的名称
+       UPROPERTY(EditDefaultsOnly, Category = "Game")
+       FName StartupLevelName = NAME_None;
+   
+       // 主菜单关卡的名称
+       UPROPERTY(EditDefaultsOnly, Category = "Game")
+       FName MenuLevelName = NAME_None;
+   };
+
+3. 创建控件蓝图`WBP_GoToMenu`
+
+   1. 将按钮复制到当前控件蓝图中
+   2. 修改蓝图父类为`STUGoToMenuWidget`
+   3. 修改UI控件的名称
+
+   <img src="AssetMarkdown/image-20230304205728695.png" alt="image-20230304205728695" style="zoom:80%;" />
+
+4. 修改`WBP_GamePause`：
+
+   1. 将`WBP_GoToMenu`添加到控件中
+
+   <img src="AssetMarkdown/image-20230304205924695.png" alt="image-20230304205924695" style="zoom:80%;" />
+
+5. 修改`WBP_GameOver`：
+
+   1. 将`WBP_GoToMenu`添加到控件中
+
+   <img src="AssetMarkdown/image-20230304210035344.png" alt="image-20230304210035344" style="zoom:80%;" />
+
+6. 
