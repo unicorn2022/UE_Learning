@@ -1,4 +1,4 @@
-目录
+# 目录
 
 [TOC]
 
@@ -357,4 +357,274 @@
    2. 添加`背景模糊`处理效果，强度设置为`4`
 
    <img src="AssetMarkdown/image-20230302221219509.png" alt="image-20230302221219509" style="zoom:80%;" />
+
+# 三、游戏结束及对应UI
+
+1. 修改`STUGameHUD`：添加游戏结束时的widget引用
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUGameHUD : public AHUD {
+       ...
+   
+   protected:
+       // 游戏结束时的UI
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       TSubclassOf<UUserWidget> GameOverWidgetClass;
+   };
+   ```
+
+   ```c++
+   void ASTUGameHUD::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 将UserWidget与对应游戏状态建立映射
+       GameWidgets.Add(ESTUMatchState::InProgress, CreateWidget<UUserWidget>(GetWorld(), PlayerHUDWidgetClass));
+       GameWidgets.Add(ESTUMatchState::Pause, CreateWidget<UUserWidget>(GetWorld(), PauseWidgetClass));
+       GameWidgets.Add(ESTUMatchState::GameOver, CreateWidget<UUserWidget>(GetWorld(), GameOverWidgetClass));
+   
+       // 将UserWidget添加到场景中, 并设置为不可见
+       for (auto GameWidgetPair : GameWidgets) {
+           const auto GameWidget = GameWidgetPair.Value;
+           if (!GameWidget) continue;
+           GameWidget->AddToViewport();
+           GameWidget->SetVisibility(ESlateVisibility::Hidden);
+       }
+   
+       // 订阅OnMatchStateChanged委托
+       if (GetWorld()) {
+           const auto GameMode = Cast<ASTUGameModeBase>(GetWorld()->GetAuthGameMode());
+           if (GameMode) {
+               GameMode->OnMatchStateChanged.AddUObject(this, &ASTUGameHUD::OnMatchStateChanged);
+           }
+       }
+   }
+
+2. 复制`WBP_GamePause`，创建控件蓝图`WBP_GameOver`
+
+   1. 将父类临时设置为`UserWidget`
+   2. 删除按钮及对应的尺寸框
+   3. 在`BP_STUGameHUD`中设置`GameOverWidgetClass`对应的类为`WBP_GameOver`
+
+3. 创建控件蓝图`WBP_PlayerStateRow`：每个角色信息的UI行
+
+   <img src="AssetMarkdown/image-20230304130737322.png" alt="image-20230304130737322" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230304130346991.png" alt="image-20230304130346991" style="zoom:80%;" />
+
+4. 修改`WBP_GameOver`
+
+   <img src="AssetMarkdown/image-20230304130754554.png" alt="image-20230304130754554" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230304130654818.png" alt="image-20230304130654818" style="zoom:80%;" />
+
+5. 创建C++类`STUGameOverWidget`，继承于`UserWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUCoreTypes.h"
+   #include "STUGameOverWidget.generated.h"
+   
+   class UVerticalBox;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGameOverWidget : public UUserWidget {
+       GENERATED_BODY()
+   
+   public:
+       virtual bool Initialize() override;
+   
+   protected:
+       // 显示角色信息的垂直框
+       UPROPERTY(meta = (BindWidget))
+       UVerticalBox* PlayerStateBox;
+   
+       // 角色信息单行显示UI
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       TSubclassOf<UUserWidget> PlayerStateRowWidgetClass;
+   
+   private:
+       void OnMatchStateChanged(ESTUMatchState State);
+       // 更新角色信息
+       void UpdatePlayerState();
+   };
+   ```
+
+   ```c++
+   #include "UI/STUGameOverWidget.h"
+   #include "STUGameModeBase.h"
+   #include "Player/STUPlayerState.h"
+   #include "UI/STUPlayerStateRowWidget.h"
+   #include "Components/VerticalBox.h"
+   #include "STUUtils.h"
+   
+   bool USTUGameOverWidget::Initialize() {
+       if (GetWorld()) {
+           const auto GameMode = Cast<ASTUGameModeBase>(GetWorld()->GetAuthGameMode());
+           if (GameMode) {
+               GameMode->OnMatchStateChanged.AddUObject(this, &USTUGameOverWidget::OnMatchStateChanged);
+           }
+       }
+       return Super::Initialize();
+   }
+   
+   void USTUGameOverWidget::OnMatchStateChanged(ESTUMatchState State) {
+       if (State == ESTUMatchState::GameOver) {
+           UpdatePlayerState();
+       }
+   }
+   
+   void USTUGameOverWidget::UpdatePlayerState() {
+       if (!GetWorld() || !PlayerStateBox) return;
+   
+       // 清空子节点, 保证垂直框中的均为本函数创建的
+       PlayerStateBox->ClearChildren();
+   
+       for (auto It = GetWorld()->GetControllerIterator(); It; ++It) {
+           // 获取角色状态
+           const auto Controller = It->Get();
+           if (!Controller) continue;
+           const auto PlayerState = Cast<ASTUPlayerState>(Controller->PlayerState);
+           if (!PlayerState) continue;
+           
+           // 创建UI控件
+           const auto PlayerStateRowWidget = CreateWidget<USTUPlayerStateRowWidget>(GetWorld(), PlayerStateRowWidgetClass);
+           if (!PlayerStateRowWidget) continue;
+   
+           // 修改UI控件的显示信息
+           PlayerStateRowWidget->SetPlayerName(FText::FromString(PlayerState->GetPlayerName()));
+           PlayerStateRowWidget->SetKills(STUUtils::TextFromInt(PlayerState->GetKillsNum()));
+           PlayerStateRowWidget->SetDeaths(STUUtils::TextFromInt(PlayerState->GetDeathsNum()));
+           PlayerStateRowWidget->SetTeam(STUUtils::TextFromInt(PlayerState->GetTeamID()));
+           PlayerStateRowWidget->SetPlayerIndicatorVisibility(Controller->IsPlayerController());
+   
+           // 将UI控件添加到垂直框中
+           PlayerStateBox->AddChild(PlayerStateRowWidget);
+       }
+   }
+
+6. 创建C++类`STUPlayerStateRowWidget`，继承于`UserWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUPlayerStateRowWidget.generated.h"
+   
+   class UImage;
+   class UTextBlock;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerStateRowWidget : public UUserWidget {
+       GENERATED_BODY()
+   
+   public:
+       void SetPlayerName(const FText& Text);
+       void SetKills(const FText& Text);
+       void SetDeaths(const FText& Text);
+       void SetTeam(const FText& Text);
+       void SetPlayerIndicatorVisibility(bool Visible);
+   
+   protected:
+       // 文本框: 玩家姓名
+       UPROPERTY(meta = (BindWidget))
+       UTextBlock* PlayerNameTextBlock;
+       // 文本框: 击杀数
+       UPROPERTY(meta = (BindWidget))
+       UTextBlock* KillsTextBlock;
+       // 文本框: 死亡数
+       UPROPERTY(meta = (BindWidget))
+       UTextBlock* DeathsTextBlock;
+       // 文本框: 所属队伍
+       UPROPERTY(meta = (BindWidget))
+       UTextBlock* TeamTextBlock;
+       // 图像框: 高亮显示
+       UPROPERTY(meta = (BindWidget))
+       UImage* PlayerIndicatorImage;
+   };
+   ```
+
+   ```c++
+   #include "UI/STUPlayerStateRowWidget.h"
+   #include "Components/TextBlock.h"
+   #include "Components/Image.h"
+   
+   void USTUPlayerStateRowWidget::SetPlayerName(const FText& Text) {
+       if (!PlayerNameTextBlock) return;
+       PlayerNameTextBlock->SetText(Text);
+   }
+   
+   void USTUPlayerStateRowWidget::SetKills(const FText& Text) {
+       if (!KillsTextBlock) return;
+       KillsTextBlock->SetText(Text);
+   }
+   
+   void USTUPlayerStateRowWidget::SetDeaths(const FText& Text) {
+       if (!DeathsTextBlock) return;
+       DeathsTextBlock->SetText(Text);
+   }
+   
+   void USTUPlayerStateRowWidget::SetTeam(const FText& Text) {
+       if (!TeamTextBlock) return;
+       TeamTextBlock->SetText(Text);
+   }
+   
+   void USTUPlayerStateRowWidget::SetPlayerIndicatorVisibility(bool Visible) {
+       if (!PlayerIndicatorImage) return;
+       PlayerIndicatorImage->SetVisibility(Visible ? ESlateVisibility::Visible : ESlateVisibility::Hidden);
+   }
+
+7. 修改`STUGameModeBase/CreateTeamsInfo()`：创建角色的姓名
+
+   ```c++
+   void ASTUGameModeBase::CreateTeamsInfo() {
+       if (!GetWorld()) return;
+   
+       int32 TeamID = 1;
+       for (auto It = GetWorld()->GetControllerIterator(); It; ++It) {
+           const auto Controller = It->Get();
+           if (!Controller) continue;
+           
+           const auto PlayerState = Cast<ASTUPlayerState>(Controller->PlayerState);
+           if (!PlayerState) continue;
+   
+           PlayerState->SetTeamID(TeamID);
+           PlayerState->SetTeamColor(DetermineColorByTeamID(TeamID));
+           PlayerState->SetPlayerName(Controller->IsPlayerController() ? "Player" : "Bot");
+           SetPlayerColor(Controller);
+   
+           TeamID = TeamID == 1 ? 2 : 1;
+       }
+   }
+   ```
+
+8. 修改`WBP_GameOver`
+
+   1. 将蓝图父类设置为`STUGameOverWidget`
+   2. 重命名UI控件
+   3. 将`PlayerStateRowWidgetClass`设置为`WBP_PlayerStateRow`
+
+   <img src="AssetMarkdown/image-20230304153451839.png" alt="image-20230304153451839" style="zoom:80%;" />
+
+9. 修改`WBP_PlayerStateRow`
+
+   1. 将蓝图父类设置为`STUPlayerStateRowWidget`
+   2. 重命名UI控件
+
+   <img src="AssetMarkdown/image-20230304154609739.png" alt="image-20230304154609739" style="zoom:80%;" />
+
+10. 修改`WBP_GameOver`：
+
+    1. 将`PlayerStateBox`包裹为`滚动框`，并修改`滚动框/细节/样式、滚动`
+    2. 将`滚动框`包裹为`尺寸框`，并设置最大高度为`300`
+
+    <img src="AssetMarkdown/image-20230304154425455.png" alt="image-20230304154425455" style="zoom:80%;" />
 
