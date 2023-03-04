@@ -628,3 +628,63 @@
 
     <img src="AssetMarkdown/image-20230304154425455.png" alt="image-20230304154425455" style="zoom:80%;" />
 
+# 四、游戏结束后，重新开始游戏
+
+1. 修改`STUGameOverWidget`
+
+   ```c++
+   class UButton;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGameOverWidget : public UUserWidget {
+       ...
+   
+   protected:
+       // 按钮：重新开始游戏
+       UPROPERTY(meta = (BindWidget))
+       UButton* ResetLevelButton;
+   
+       // Initialize()时调用的函数
+       virtual void NativeOnInitialized() override;
+   
+   private:
+       // 委托：重新开始游戏
+       UFUNCTION()
+       void OnResetLevel();
+   };
+   ```
+
+   ```c++
+   #include "Components/Button.h"
+   #include "Kismet/GameplayStatics.h"
+   
+   void USTUGameOverWidget::NativeOnInitialized() {
+       Super::NativeOnInitialized();
+   
+       // 订阅 OnMatchStateChanged 委托
+       if (GetWorld()) {
+           const auto GameMode = Cast<ASTUGameModeBase>(GetWorld()->GetAuthGameMode());
+           if (GameMode) {
+               GameMode->OnMatchStateChanged.AddUObject(this, &USTUGameOverWidget::OnMatchStateChanged);
+           }
+       }
+   
+       // 订阅 ResetLevelButton 的点击事件
+       if (ResetLevelButton) {
+           ResetLevelButton->OnClicked.AddDynamic(this, &USTUGameOverWidget::OnResetLevel);
+       }
+   }
+   
+   void USTUGameOverWidget::OnResetLevel() {
+       // 硬重置: 直接重新打开关卡
+       const FString CurrentLevelName = UGameplayStatics::GetCurrentLevelName(this);
+       UGameplayStatics::OpenLevel(this, FName(CurrentLevelName));
+   }
+
+2. 将所有`Widget`类的`Initialize()`修改为`NativeOnInitialized`
+
+3. 修改`WBP_GameOver`：添加`ResetLevelButton`
+
+   <img src="AssetMarkdown/image-20230304161523671.png" alt="image-20230304161523671" style="zoom:80%;" />
+
+4. 
