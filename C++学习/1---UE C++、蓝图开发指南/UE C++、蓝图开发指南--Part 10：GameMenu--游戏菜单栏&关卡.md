@@ -1462,4 +1462,178 @@
 
     <img src="AssetMarkdown/image-20230304231341652.png" alt="image-20230304231341652" style="zoom:80%;" />
 
-12. 
+# 十一、AI角色的血量条：Widget组件
+
+1. 创建控件蓝图`WBP_HealthBar`
+
+   1. 路径：`Content/UI`
+   2. 添加进度条控件
+      1. 大小设置为`70×10`
+      2. 填充颜色设置为`白色`
+      3. 背景图设置为`Sample`，着色设置为`黑色`
+      4. 填充图设置为`Sample`，这样就没有渐变效果了
+
+   <img src="AssetMarkdown/image-20230305162013183.png" alt="image-20230305162013183" style="zoom:80%;" />
+
+2. 新建C++类`STUHealthBarWidget`，继承于`UserWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUHealthBarWidget.generated.h"
+   
+   class UProgressBar;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUHealthBarWidget : public UUserWidget {
+       GENERATED_BODY()
+   public:
+       void SetHealthPercent(float Percent);
+   
+   protected:
+       UPROPERTY(meta = (BindWidget))
+       UProgressBar* HealthProgressBar;
+       
+       // 达到该百分比后, 显示血量条
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       float PercentVisibilityThreshold = 0.8f;
+   
+       // 达到该百分比后, 血量条变色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       float PercentColorThreshold = 0.3f;
+   
+       // 正常颜色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       FLinearColor GoodColor = FLinearColor::White;
+   
+       // 血量偏低时颜色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       FLinearColor BadColor = FLinearColor::Red;
+   };
+   ```
+
+   ```c++
+   #include "UI/STUHealthBarWidget.h"
+   #include "Components/ProgressBar.h"
+   
+   void USTUHealthBarWidget::SetHealthPercent(float Percent) {
+       if (!HealthProgressBar) return;
+   
+       HealthProgressBar->SetPercent(Percent);
+   
+       // 角色血量较多 or 死亡时，不显示血量条
+       const auto HealthBarVisibility = (Percent > PercentVisibilityThreshold || FMath::IsNearlyZero(Percent))  //
+                                            ? ESlateVisibility::Hidden
+                                            : ESlateVisibility::Visible;
+       HealthProgressBar->SetVisibility(HealthBarVisibility);
+   
+       // 角色血量较低时, 换一种血量颜色
+       const auto HealthBarColor = Percent > PercentColorThreshold ? GoodColor : BadColor;
+       HealthProgressBar->SetFillColorAndOpacity(HealthBarColor);
+   }
+
+3. 修改`STUAICharacter`：添加Widget组件
+
+   ```c++
+   class UWidgetComponent;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUAICharacter : public ASTUBaseCharacter {
+       ...
+   
+   public:
+       virtual void Tick(float DeltaTime) override;
+   
+   protected:
+       // 组件：血量条
+       UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Components")
+       UWidgetComponent* HealthWidgetComponent;
+   
+       // 可以看见血量条的最小距离
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "AI")
+       float HealthVisibilityDistance = 1000.0f;
+   
+       virtual void BeginPlay() override;
+   
+       // 血量变化回调函数
+       virtual void OnHealthChanged(float Health, float HealthDelta) override;
+   
+   private:
+       // 更新血量条的可见性
+       void UpdateHealthWidgetVisibility();
+   };
+   ```
+
+   ```c++
+   #include "Components/STUHealthComponent.h"
+   #include "Components/WidgetComponent.h"
+   #include "UI/STUHealthBarWidget.h"
+   
+   ASTUAICharacter::ASTUAICharacter(const FObjectInitializer& ObjInit)
+       : Super(ObjInit.SetDefaultSubobjectClass<USTUAIWeaponComponent>("STUWeaponComponent")) {
+       // 不自动生成Controller, 而是沿用之前回合的Controller
+       AutoPossessAI = EAutoPossessAI::Disabled;
+       AIControllerClass = ASTUAIController::StaticClass();
+   
+       // 设置character的旋转
+       bUseControllerRotationYaw = false;
+       if (GetCharacterMovement()) {
+           GetCharacterMovement()->bUseControllerDesiredRotation = true;
+           GetCharacterMovement()->RotationRate = FRotator(0.0f, 200.0f, 0.0f);
+       }
+   
+       // 创建血量条组件
+       HealthWidgetComponent = CreateDefaultSubobject<UWidgetComponent>("STUHealthBarWidget");
+       HealthWidgetComponent->SetupAttachment(GetRootComponent());
+       HealthWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+       HealthWidgetComponent->SetDrawAtDesiredSize(true);
+   }
+   
+   void ASTUAICharacter::Tick(float DeltaTime) {
+       Super::Tick(DeltaTime);
+       UpdateHealthWidgetVisibility();
+   }
+   
+   void ASTUAICharacter::BeginPlay() {
+       Super::BeginPlay();
+   
+       check(HealthWidgetComponent);
+   }
+   
+   void ASTUAICharacter::OnHealthChanged(float Health, float HealthDelta) {
+       Super::OnHealthChanged(Health, HealthDelta);
+   
+       const auto HealthBarWidget = Cast<USTUHealthBarWidget>(HealthWidgetComponent->GetUserWidgetObject());
+       if (!HealthBarWidget) return;
+       HealthBarWidget->SetHealthPercent(HealthComponent->GetHealthPercent());
+   }
+   
+   // 更新血量条的可见性
+   void ASTUAICharacter::UpdateHealthWidgetVisibility() {
+       if (!GetWorld()) return;
+       const auto PlayerController = GetWorld()->GetFirstPlayerController();
+       if (!PlayerController) return;
+       // 角色死亡时, 要根据 SpectatorPawn 的位置确定可见性
+       const auto PlayerPawn = PlayerController->GetPawnOrSpectator();
+       if (!PlayerPawn) return;
+   
+       const auto PlayerLocation = PlayerPawn->GetActorLocation();
+       const auto AILocation = GetActorLocation();
+       const auto Distance = FVector::Distance(PlayerLocation, AILocation);
+       HealthWidgetComponent->SetVisibility(Distance < HealthVisibilityDistance, true);
+   }
+
+4. 修改`BP_STUAICharacter/HealthWidgetComponent`：
+
+   1. 将控件类设置为`WBP_HealthBar`
+   2. 勾选`以所需大小绘制`
+   3. 位置设置为`(0,0,120)`
+
+5. 修改`WBP_HealthBar`
+
+   1. 将蓝图父类设置为`STUHealthBarWidget`
+   2. 修改控件名称
