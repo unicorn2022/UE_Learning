@@ -1,4 +1,4 @@
-# 目录
+目录
 
 [TOC]
 
@@ -1637,3 +1637,228 @@
 
    1. 将蓝图父类设置为`STUHealthBarWidget`
    2. 修改控件名称
+
+# 十二、游戏界面UI升级
+
+1. 修改`WBP_PlayerHUD`：
+
+   1. 将原有的可视性绑定删除
+   2. 添加`画布面板`，勾选`大小到内容`，铺满整个界面，可视性绑定为`Is_Player_Alive`
+
+   <img src="AssetMarkdown/image-20230306003058112.png" alt="image-20230306003058112" style="zoom:80%;" />
+
+2. 复制`WBP_PlayerStateRow`，创建控件蓝图`WBP_PlayerStateRowTitle`
+
+   1. 重设蓝图父项为`UserWidget`
+
+3. 修改`WBP_PlayerStateRow`
+
+   1. 添加一个图像控件，放在`团队编号`右面，图像为`Ellipse`
+   2. 将`团队编号`包裹为控件切换器
+
+   <img src="AssetMarkdown/image-20230306003430510.png" alt="image-20230306003430510" style="zoom:80%;" />
+
+4. 修改`WBP_GameOver`：
+
+   1. 将标题处的`WBP_PlayerStateRow`改为`WBP_PlayerStateRowTitle`
+
+   <img src="AssetMarkdown/image-20230306000722427.png" alt="image-20230306000722427" style="zoom:80%;" />
+
+5. 修改`STUPlayerHUDWidget`：角色血量低时，血量条变为红色
+
+   ```c++
+   class UProgressBar;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+       ...
+   
+   protected:
+       // 角色血量条
+       UPROPERTY(meta = (BindWidget))
+       UProgressBar* HealthProgressBar;
+   
+       // 达到该百分比后, 血量条变色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       float PercentColorThreshold = 0.3f;
+   
+       // 正常颜色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       FLinearColor GoodColor = FLinearColor::White;
+   
+       // 血量偏低时颜色
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "UI")
+       FLinearColor BadColor = FLinearColor::Red;
+   
+   private:
+       // 更新角色血量条
+       void UpdateHealthBar();
+   };
+   ```
+
+   ```c++
+   #include "Components/ProgressBar.h"
+   
+   void USTUPlayerHUDWidget::OnHealthChanged(float Health, float HealthDelta) {
+       // 血量变化值 < 0, 受到伤害
+       if (HealthDelta < 0.0f) OnTakeDamage();
+   
+       // 更新血量条
+       UpdateHealthBar();
+   }
+   
+   void USTUPlayerHUDWidget::OnNewPawn(APawn* NewPawn) {
+       // 重新订阅HealthComponent的OnHealthChanged事件
+       const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(NewPawn);
+       if (HealthComponent && !HealthComponent->OnHealthChanged.IsBoundToObject(this)) {
+           HealthComponent->OnHealthChanged.AddUObject(this, &USTUPlayerHUDWidget::OnHealthChanged);
+       }
+   
+       // 更新血量条
+       UpdateHealthBar();
+   }
+   
+   void USTUPlayerHUDWidget::UpdateHealthBar() {
+       if (!HealthProgressBar) return;
+       const auto FillColor = GetHealthPercent() > PercentColorThreshold ? GoodColor : BadColor;
+       HealthProgressBar->SetFillColorAndOpacity(FillColor);
+   }
+   ```
+
+6. 修改`STUPlayerStateRowWidget`：更改椭圆的颜色
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerStateRowWidget : public UUserWidget {
+      ...
+   
+   public:
+       void SetTeamColor(const FLinearColor& Color);
+   
+   protected:
+       // 图像框: 队伍
+       UPROPERTY(meta = (BindWidget))
+       UImage* TeamImage;
+   };
+   ```
+
+   ```c++
+   void USTUPlayerStateRowWidget::SetTeamColor(const FLinearColor& Color) {
+       if (!TeamImage) return;
+       TeamImage->SetColorAndOpacity(Color);
+   }
+
+7. 修改`STUGameOverWidget/UpdatePlayerState()`：更新队伍颜色
+
+   ```c++
+   void USTUGameOverWidget::UpdatePlayerState() {
+       if (!GetWorld() || !PlayerStateBox) return;
+   
+       // 清空子节点, 保证垂直框中的均为本函数创建的
+       PlayerStateBox->ClearChildren();
+   
+       for (auto It = GetWorld()->GetControllerIterator(); It; ++It) {
+           // 获取角色状态
+           const auto Controller = It->Get();
+           if (!Controller) continue;
+           const auto PlayerState = Cast<ASTUPlayerState>(Controller->PlayerState);
+           if (!PlayerState) continue;
+           
+           // 创建UI控件
+           const auto PlayerStateRowWidget = CreateWidget<USTUPlayerStateRowWidget>(GetWorld(), PlayerStateRowWidgetClass);
+           if (!PlayerStateRowWidget) continue;
+   
+           // 修改UI控件的显示信息
+           PlayerStateRowWidget->SetPlayerName(FText::FromString(PlayerState->GetPlayerName()));
+           PlayerStateRowWidget->SetKills(STUUtils::TextFromInt(PlayerState->GetKillsNum()));
+           PlayerStateRowWidget->SetDeaths(STUUtils::TextFromInt(PlayerState->GetDeathsNum()));
+           PlayerStateRowWidget->SetTeam(STUUtils::TextFromInt(PlayerState->GetTeamID()));
+           PlayerStateRowWidget->SetPlayerIndicatorVisibility(Controller->IsPlayerController());
+           PlayerStateRowWidget->SetTeamColor(PlayerState->GetTeamColor());
+   
+           // 将UI控件添加到垂直框中
+           PlayerStateBox->AddChild(PlayerStateRowWidget);
+       }
+   }
+
+8. 优化UI界面
+
+9. 修改`STULevelItemWidget`：
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTULevelItemWidget : public UUserWidget {
+       ...
+   
+   private:
+       UFUNCTION()
+       void OnLevelItemHovered();
+   
+       UFUNCTION()
+       void OnLevelItemUnhovered();
+   };
+   ```
+
+   ```c++
+   void USTULevelItemWidget::NativeOnInitialized() {
+       Super::NativeOnInitialized();
+   
+       if (LevelSelectButton) {
+           LevelSelectButton->OnClicked.AddDynamic(this, &USTULevelItemWidget::OnLevelItemClicked);
+           LevelSelectButton->OnHovered.AddDynamic(this, &USTULevelItemWidget::OnLevelItemHovered);
+           LevelSelectButton->OnUnhovered.AddDynamic(this, &USTULevelItemWidget::OnLevelItemUnhovered);
+       }
+   }
+   
+   void USTULevelItemWidget::OnLevelItemHovered() {
+       if (FrameImage) {
+           FrameImage->SetVisibility(ESlateVisibility::Visible);
+       }
+   }
+   
+   void USTULevelItemWidget::OnLevelItemUnhovered() {
+       if (FrameImage) {
+           FrameImage->SetVisibility(ESlateVisibility::Hidden);
+       }
+   }
+   
+   void USTULevelItemWidget::SetSelected(bool IsSelected) {
+       if (LevelImage) {
+           LevelImage->SetColorAndOpacity(IsSelected ? FLinearColor::Red : FLinearColor::White);
+       }
+   }
+
+10. 修改`STUPlayerHUDWidget`：格式化子弹数量
+
+    ```c++
+    UCLASS()
+    class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+        ...
+    public:
+        // 格式化子弹数量
+        UFUNCTION(BlueprintCallable, Category = "UI")
+        FString FormatBullets(int32 BulletsNum) const;
+    };
+    ```
+
+    ```c++
+    FString USTUPlayerHUDWidget::FormatBullets(int32 BulletsNum) const {
+        const int32 MaxLen = 3;
+        const TCHAR PrefixSymbol = '0';
+    
+        auto BulletStr = FString::FromInt(BulletsNum);
+        const auto SymbolsNumToAdd = MaxLen - BulletStr.Len();
+    
+        if (SymbolsNumToAdd > 0) {
+            BulletStr = FString::ChrN(SymbolsNumToAdd, PrefixSymbol).Append(BulletStr);
+        }
+    
+        return BulletStr;
+    }
+    ```
+
+11. 修改`WBP_PlayerHUD/Get_现有子弹数`
+
+    <img src="AssetMarkdown/image-20230306021419855.png" alt="image-20230306021419855" style="zoom:80%;" />
+
+# 十三、
