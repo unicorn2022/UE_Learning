@@ -1,5 +1,7 @@
 [TOC]
 
+> 在命令行界面，输入`Audio3dVisualize`，可以看到声音相关数据
+
 # 一、蓝图播放音效：点击按钮
 
 1. 新建音效/SoundCue`SCue_ButtonHover、SCue_ButtonPressed`
@@ -177,3 +179,30 @@
 3. 创建音效/类/音效类`SC_UI、SC_Weapon`，并设置对应的音效
 
    1. 路径：`Content/Sounds/Settings`
+
+# 六、音量衰减
+
+1. 创建音效/类/音效类`SC_ProjectileFly`
+
+   1. 路径：`Content/Sounds/Weapon/Projectile`
+
+   <img src="AssetMarkdown/image-20230306220941740.png" alt="image-20230306220941740" style="zoom:80%;" />
+
+2. 创建音效衰减`SA_ProjectileFly`
+
+   1. 路径：`Content/Sounds/Weapon/Projectile`
+
+3. 将`SC_ProjectileFly/输出`的`衰减设置`，设置为`SA_ProjectileFly`
+
+4. 将之前所有的音效的衰减设置，设置为`ExternalContent/Sounds/Audio_Settings/Attenuation`中的设置
+
+   1. 武器音效：`Foley`
+   2. 走路：`Footsteps`
+   3. 跑步：`Foley`
+   4. 榴弹：`Projectile`
+
+5. 修改`BP_STUProjectile`
+
+   1. 添加音频组件，音效设置为`SC_ProjectileFly`
+
+# 七、
