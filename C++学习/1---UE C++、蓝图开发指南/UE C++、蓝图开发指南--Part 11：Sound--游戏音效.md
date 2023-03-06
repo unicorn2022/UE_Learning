@@ -702,3 +702,21 @@
    }
 
 9. 修改`BP_STUGameInstance`：将`MasterSoundClass`设置为`SC_Master`
+
+# 十、环境声音
+
+1. 创建音效/类/音效类`SCue_GameAmbient、SCue_MenuAmbient`
+
+   1. 路径：`Content/Sounds/Ambient`
+   2. 音效类：`SC_Ambient`
+   3. 衰减：null
+
+2. 新建蓝图类`BP_AmbientSound`，继承于`Actor`
+
+   1. 路径：`Content/World`
+   2. 添加音频组件，不设置具体音效，而是在实例中设置音效
+   3. 修改事件蓝图
+
+   <img src="AssetMarkdown/image-20230307001256696.png" alt="image-20230307001256696" style="zoom:80%;" />
+
+3. 
