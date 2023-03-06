@@ -1861,4 +1861,171 @@
 
     <img src="AssetMarkdown/image-20230306021419855.png" alt="image-20230306021419855" style="zoom:80%;" />
 
-# 十三、
+# 十三、UI动画：角色受伤 & 控件显示
+
+1. 修改`STUPlayerHUDWidget`：C++实现受伤时播放UI动画
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUPlayerHUDWidget : public UUserWidget {
+       ...
+   
+   protected:
+       // 角色受伤时, UI动画
+       UPROPERTY(meta = (BindWidgetAnim), Transient)
+       UWidgetAnimation* DamageAnimation;
+   };
+   ```
+
+   ```c++
+   void USTUPlayerHUDWidget::OnHealthChanged(float Health, float HealthDelta) {
+       // 血量变化值 < 0, 受到伤害
+       if (HealthDelta < 0.0f) {
+           OnTakeDamage();
+           if (!IsAnimationPlaying(DamageAnimation)) PlayAnimation(DamageAnimation);
+       }
+   
+       // 更新血量条
+       UpdateHealthBar();
+   }
+
+2. 修改`WBP_PlayerHUD`：
+
+   1. 删除事件图表中的代码
+
+3. 创建C++类`STUBaseWidget`，继承于`UserWidget`
+
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/UI`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Blueprint/UserWidget.h"
+   #include "STUBaseWidget.generated.h"
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUBaseWidget : public UUserWidget {
+       GENERATED_BODY()
+   
+   public:
+       void Show();
+   
+   protected:
+       UPROPERTY(meta = (BindWidgetAnim), Transient)
+       UWidgetAnimation* ShowAnimation;
+   };
+   ```
+
+   ```c++
+   #include "UI/STUBaseWidget.h"
+   
+   void USTUBaseWidget::Show() {
+       PlayAnimation(ShowAnimation);
+   }
+
+4. 更改所有`widget`的基类：
+
+   1. `STUPlayerHUDWidget`
+   2. `STUPauseWidget`
+   3. `STUGameOverWidget`
+   4. `STUMenuUserWidget`
+
+5. 修改`STUMenuHUD/BeginPlay()`：
+
+   ```c++
+   #include "Menu/UI/STUMenuHUD.h"
+   #include "UI/STUBaseWidget.h"
+   
+   void ASTUMenuHUD::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 创建菜单控件, 并添加到视图
+       if (MenuWidgetClass) {
+           const auto MenuWidget = CreateWidget<USTUBaseWidget>(GetWorld(), MenuWidgetClass);
+           if (MenuWidget) {
+               MenuWidget->AddToViewport();
+               MenuWidget->Show();
+           }
+       }
+   }
+
+6. 修改`STUGameHUD/BeginPlay()`：
+
+   ```c++
+   class USTUBaseWidget;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUGameHUD : public AHUD {
+       ...
+   
+   private:
+       // 将游戏状态与对应UI建立映射关系
+       UPROPERTY()
+       TMap<ESTUMatchState, USTUBaseWidget*> GameWidgets;
+       
+       // 游戏当前UI
+       UPROPERTY()
+       USTUBaseWidget* CurrentWidget = nullptr;
+   };
+   ```
+
+   ```c++
+   void ASTUGameHUD::BeginPlay() {
+       Super::BeginPlay();
+   
+       // 将UserWidget与对应游戏状态建立映射
+       GameWidgets.Add(ESTUMatchState::InProgress, CreateWidget<USTUBaseWidget>(GetWorld(), PlayerHUDWidgetClass));
+       GameWidgets.Add(ESTUMatchState::Pause, CreateWidget<USTUBaseWidget>(GetWorld(), PauseWidgetClass));
+       GameWidgets.Add(ESTUMatchState::GameOver, CreateWidget<USTUBaseWidget>(GetWorld(), GameOverWidgetClass));
+   
+       // 将UserWidget添加到场景中, 并设置为不可见
+       for (auto GameWidgetPair : GameWidgets) {
+           const auto GameWidget = GameWidgetPair.Value;
+           if (!GameWidget) continue;
+           GameWidget->AddToViewport();
+           GameWidget->SetVisibility(ESlateVisibility::Hidden);
+       }
+   
+       // 订阅OnMatchStateChanged委托
+       if (GetWorld()) {
+           const auto GameMode = Cast<ASTUGameModeBase>(GetWorld()->GetAuthGameMode());
+           if (GameMode) {
+               GameMode->OnMatchStateChanged.AddUObject(this, &ASTUGameHUD::OnMatchStateChanged);
+           }
+       }
+   }
+   
+   void ASTUGameHUD::OnMatchStateChanged(ESTUMatchState State) {
+       // 将当前UI设为不可见 
+       if (CurrentWidget) CurrentWidget->SetVisibility(ESlateVisibility::Hidden);
+       // 然后更改UI界面
+       if (GameWidgets.Contains(State)) CurrentWidget = GameWidgets[State];
+       if (CurrentWidget) {
+           CurrentWidget->SetVisibility(ESlateVisibility::Visible);
+           CurrentWidget->Show();
+       }
+   
+       UE_LOG(LogSTUGameHUD, Display, TEXT("Match state changed: %s"), *UEnum::GetValueAsString(State));
+   }
+
+7. 修改`WBP_Menu`：添加`ShowAnimation`
+
+   1. 添加一个`图像`，重命名为`ShowImage`，覆盖全屏，颜色设置为黑色，可视性设置为`非命中测试(自身和所有子项)`
+   2. 动画如下
+
+   <img src="AssetMarkdown/image-20230306174525273.png" alt="image-20230306174525273" style="zoom:80%;" />
+
+8. 修改`WBP_PlayerHUD`：添加`ShowAnimation`
+
+   <img src="AssetMarkdown/image-20230306175128568.png" alt="image-20230306175128568" style="zoom:80%;" />
+
+9. 修改`WBP_GamePause`：添加`ShowAnimation`
+
+   <img src="AssetMarkdown/image-20230306175411865.png" alt="image-20230306175411865" style="zoom:80%;" />
+
+10. 修改`WBP_GameOver`：添加`ShowAnimation`
+
+    <img src="AssetMarkdown/image-20230306175528024.png" alt="image-20230306175528024" style="zoom:80%;" />
+
+# 十四、
