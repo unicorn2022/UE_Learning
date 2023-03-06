@@ -552,3 +552,153 @@
    }
 
 7. 安装所有声音：`BP_STUProjectile、BP_STURifleWeapon、BP_STUAmmoPickup、BP_STUHealthPickup`
+
+# 九、自定义蓝图函数、主音效类
+
+1. 新建C++类`STUSoundFuncLib`，继承于`BlueprintFunctionLibrary`
+   1. 目录：`ShootThemUp/Source/ShootThemUp/Public/Sound`
+
+2. 修改`ShootThemUp.Build.cs`：
+
+   ```c#
+   PublicIncludePaths.AddRange(new string[] { 
+       "ShootThemUp/Public/Player", 
+       "ShootThemUp/Public/Components", 
+       "ShootThemUp/Public/Dev",
+       "ShootThemUp/Public/Weapon",
+       "ShootThemUp/Public/UI",
+       "ShootThemUp/Public/Animations",
+       "ShootThemUp/Public/Pickups",
+       "ShootThemUp/Public/Weapon/Components",
+       "ShootThemUp/Public/AI",
+       "ShootThemUp/Public/AI/Tasks",
+       "ShootThemUp/Public/AI/Services",
+       "ShootThemUp/Public/AI/EQS",
+       "ShootThemUp/Public/AI/Decorators",
+       "ShootThemUp/Public/Menu",
+       "ShootThemUp/Public/Menu/UI",
+       "ShootThemUp/Public/Sound"
+   });
+   ```
+
+3. 修改`STUSoundFuncLib`
+
+   ```c++
+   #pragma once
+   
+   #include "CoreMinimal.h"
+   #include "Kismet/BlueprintFunctionLibrary.h"
+   #include "STUSoundFuncLib.generated.h"
+   
+   class USoundClass;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUSoundFuncLib : public UBlueprintFunctionLibrary {
+       GENERATED_BODY()
+   
+   public:
+       UFUNCTION(BlueprintCallable)
+       static void SetSoundClassVolume(USoundClass* SoundClass, float Volume);
+   
+       UFUNCTION(BlueprintCallable)
+       static void ToggleSoundClassVolume(USoundClass* SoundClass);
+   };
+   ```
+
+   ```c++
+   #include "Sound/STUSoundFuncLib.h"
+   #include "Sound/SoundClass.h"
+   
+   DEFINE_LOG_CATEGORY_STATIC(LogSTUSoundFuncLib, All, All);
+   
+   void USTUSoundFuncLib::SetSoundClassVolume(USoundClass* SoundClass, float Volume) {
+       if (!SoundClass) return;
+   
+       SoundClass->Properties.Volume = FMath::Clamp(Volume, 0.0f, 1.0f);
+       UE_LOG(LogSTUSoundFuncLib, Display,
+           TEXT("Sound class volume was changed: %s = %f"), *SoundClass->GetName(), SoundClass->Properties.Volume);
+   }
+   
+   void USTUSoundFuncLib::ToggleSoundClassVolume(USoundClass* SoundClass) {
+       if (!SoundClass) return;
+   
+       const auto NextVolume = SoundClass->Properties.Volume > 0.0f ? 0.0f : 1.0f;
+       SetSoundClassVolume(SoundClass, NextVolume);
+   }
+
+4. 修改`BP_STUPlayerController`：
+
+   <img src="AssetMarkdown/image-20230306235035305.png" alt="image-20230306235035305" style="zoom:80%;" />
+
+5. 新建音效类`SC_Master`
+
+   1. 将其他音效类，作为它的子类
+
+   <img src="AssetMarkdown/image-20230306235015920.png" alt="image-20230306235015920" style="zoom:80%;" />
+
+6. 修改项目设置
+
+   1. 添加操作映射`Mute`，对应M键
+   2. 将`默认音效类`设置为`SC_Master`
+
+7. 修改`STUGameInstance`：添加主音效类
+
+   ```c++
+   class USoundClass;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API USTUGameInstance : public UGameInstance {
+       ...
+   
+   public:
+       void ToggleVolume();
+   
+   protected:
+       // 主音效类
+       UPROPERTY(EditDefaultsOnly, Category = "Sound")
+       USoundClass* MasterSoundClass;
+   };
+   ```
+
+   ```c++
+   #include "STUGameInstance.h"
+   #include "Sound/STUSoundFuncLib.h"
+   
+   void USTUGameInstance::ToggleVolume() {
+       USTUSoundFuncLib::ToggleSoundClassVolume(MasterSoundClass);
+   }
+
+8. 修改`STUPlayerController`：绑定`Mute`事件
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUPlayerController : public APlayerController {
+       ...
+   
+   private:
+       // 委托：静音
+       void OnMuteSound();
+   };
+   ```
+
+   ```c++
+   #include "STUGameInstance.h"
+   
+   void ASTUPlayerController::SetupInputComponent() {
+       Super::SetupInputComponent();
+       if (!InputComponent) return;
+   
+       InputComponent->BindAction("PauseGame", IE_Pressed, this, &ASTUPlayerController::OnPauseGame);
+       InputComponent->BindAction("Mute", IE_Pressed, this, &ASTUPlayerController::OnMuteSound);
+   }
+   
+   void ASTUPlayerController::OnMuteSound() {
+       if (!GetWorld()) return;
+   
+       const auto STUGameInstance = GetWorld()->GetGameInstance<USTUGameInstance>();
+       if (!STUGameInstance) return;
+   
+       STUGameInstance->ToggleVolume();
+   }
+
+9. 修改`BP_STUGameInstance`：将`MasterSoundClass`设置为`SC_Master`
