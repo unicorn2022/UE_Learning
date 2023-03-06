@@ -719,4 +719,29 @@
 
    <img src="AssetMarkdown/image-20230307001256696.png" alt="image-20230307001256696" style="zoom:80%;" />
 
-3. 
+# 十一、音效类混合
+
+1. 创建音效/类/音效类混合`SMix_Default`
+
+   1. 路径：`Content/Sounds/Settings`
+   2. 修改音效类效果
+
+   <img src="AssetMarkdown/image-20230307001832761.png" alt="image-20230307001832761" style="zoom: 80%;" />
+
+2. 修改项目设置
+
+   1. 将`默认基础音效混合`设置为`SMix_Default`
+
+   <img src="AssetMarkdown/image-20230307001938918.png" alt="image-20230307001938918" style="zoom:80%;" />
+
+3. 创建音效/类/音效类混合`SMix_FadeOut`
+
+   1. 路径：`Content/Sounds/Settings`
+   2. 修改音效类效果
+
+   <img src="AssetMarkdown/image-20230307002152323.png" alt="image-20230307002152323" style="zoom:80%;" />
+
+4. 修改`BP_STUPlayerController/事件蓝图`：**push/pop**音效混合
+
+   <img src="AssetMarkdown/image-20230307002427688.png" alt="image-20230307002427688" style="zoom:80%;" />
+
