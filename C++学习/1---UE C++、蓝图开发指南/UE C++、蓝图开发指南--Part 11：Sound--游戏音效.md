@@ -438,3 +438,117 @@
     1. 设置`FireSound`为`SCue_LauncherFire`
     2. 设置`NoAmmoSound`为`SCure_LauncherNoAmmo`
 
+# 八、音效：拾取物、碰撞
+
+1. 创建音效/类/音效类`SCue_HealthPickupTaken、SCue_AmmoPickupTaken`
+
+   1. 路径：`Content/Sounds/Pickup`
+   2. 音效类：`SC_Pickup`
+   3. 衰减：`Pickups`
+
+2. 创建音效/类/音效类`SCue_ProjectileImpact`
+
+   1. 路径：`Content/Sounds/Impacts`
+   2. 音效类：`SC_Impact`
+   3. 衰减：`Explosion`
+
+3. 创建音效/类/音效类`SCue_RifleDefaultImpact、SCue_RifleGroundImpact、SCue_RifleFleshImpact`
+
+   1. 路径：`Content/Sounds/Impacts`
+   2. 音效类：`SC_Impact`
+   3. 衰减：`BulletImpacts`
+
+4. 修改`STUBasePickup`：
+
+   ```c++
+   class USoundCue;
+   
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUBasePickup : public AActor {
+       ...
+   
+   protected:
+       // 音效：拾取
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Sound")
+       USoundCue* PickupSound;
+   };
+   ```
+
+   ```c++
+   #include "Kismet/GameplayStatics.h"
+   #include "Sound/SoundCue.h"
+   
+   void ASTUBasePickup::PickupWasTaken() {
+       // 取消Actor的碰撞响应
+       CollisionComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
+       
+       // 将Actor设为不可见
+       if (GetRootComponent()) GetRootComponent()->SetVisibility(false, true);
+   
+       // 开启重新生成Actor的定时器
+       FTimerHandle RespawnTimerHandle;
+       GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &ASTUBasePickup::Respawn, RespawnTime);
+   
+       // 播放拾取音效
+       UGameplayStatics::PlaySoundAtLocation(GetWorld(), PickupSound, GetActorLocation());
+   }
+
+5. 修改`STUCoreTypes/FImpactData`：
+
+   ```c++
+   class USoundCue;
+   
+   USTRUCT(BlueprintType)
+   struct FImpactData {
+       GENERATED_USTRUCT_BODY()
+   
+       // Niagara特效
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       UNiagaraSystem* NiagaraEffect;
+   
+       // 贴花数据
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       FDecalData DecalData;
+   
+       // 音效：击中
+       UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "VFX")
+       USoundCue* Sound;
+   };
+
+6. 修改`STUWeaponFXComponent`：
+
+   ```c++
+   #include "Sound/SoundCue.h"
+   
+   void USTUWeaponFXComponent::PlayImpactFX(const FHitResult& Hit) {
+       auto ImpactData = DefaultImpactData;
+   
+       if (Hit.PhysMaterial.IsValid()) {
+           const auto PhysMat = Hit.PhysMaterial.Get();
+           if (ImpactDataMap.Contains(PhysMat)) {
+               ImpactData = ImpactDataMap[PhysMat];
+           }
+       }
+   
+       // 生成Niagara系统
+       UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(),
+           ImpactData.NiagaraEffect,      // Niagara系统
+           Hit.ImpactPoint,               // 位置
+           Hit.ImpactNormal.Rotation());  // 旋转
+   
+       // 生成贴花
+       auto DecalComponent = UGameplayStatics::SpawnDecalAtLocation(GetWorld(),
+           ImpactData.DecalData.Material,  // 贴花材质
+           ImpactData.DecalData.Size,      // 贴花大小
+           Hit.ImpactPoint,                // 位置
+           Hit.ImpactNormal.Rotation());   // 旋转
+       // 一段时间后淡出
+       if (DecalComponent) {
+           DecalComponent->SetFadeOut(ImpactData.DecalData.LifeTime, ImpactData.DecalData.FadeOutTime);
+       }
+   
+       // 播放音效
+       UGameplayStatics::PlaySoundAtLocation(GetWorld(), ImpactData.Sound, Hit.ImpactPoint);
+   }
+
+7. 安装所有声音：`BP_STUProjectile、BP_STURifleWeapon、BP_STUAmmoPickup、BP_STUHealthPickup`
