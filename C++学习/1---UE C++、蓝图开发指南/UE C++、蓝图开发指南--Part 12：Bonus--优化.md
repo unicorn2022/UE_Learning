@@ -410,3 +410,57 @@
 2. 优化原有地图
 3. 修改`项目设置/Windows/Splash`，可以修改项目启动时的画面
 4. 修改`项目设置/Windows/Icon`，可以修改项目图标
+
+# 五、重构、打包
+
+1. 修改`STUBaseCharacter`：重写`TurnOff()、Reset()`
+
+   ```c++
+   void ASTUBaseCharacter::TurnOff() {
+       WeaponComponent->StopFire();
+       WeaponComponent->Zoom(false);
+       Super::TurnOff();
+   }
+   
+   void ASTUBaseCharacter::Reset() {
+       WeaponComponent->StopFire();
+       WeaponComponent->Zoom(false);
+       Super::Reset();
+   }
+
+2. 修改`STUGameModeBase`：暂停游戏时停止射击
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API ASTUGameModeBase : public AGameModeBase {
+       ...
+   
+   private:
+       // 停止所有射击
+       void StopAllFire();
+   };
+   ```
+
+   ```c++
+   #include "Components/STUWeaponComponent.h"
+   
+   bool ASTUGameModeBase::SetPause(APlayerController* PC, FCanUnpause CanUnpauseDelegate) {
+       // 先判断能否暂停, 然后再设置游戏状态
+       const auto PauseSet = Super::SetPause(PC, CanUnpauseDelegate);
+       if (PauseSet) {
+           StopAllFire();
+           SetMatchState(ESTUMatchState::Pause);
+       }
+       return PauseSet;
+   }
+   
+   void ASTUGameModeBase::StopAllFire() {
+       for (auto Pawn : TActorRange<APawn>(GetWorld())) {
+           const auto WeaponComponent = STUUtils::GetSTUPlayerComponent<USTUWeaponComponent>(Pawn);
+           if (!WeaponComponent) continue;
+   
+           WeaponComponent->StopFire();
+           WeaponComponent->Zoom(false);
+       }
+   }
+
