@@ -2028,4 +2028,41 @@
 
     <img src="AssetMarkdown/image-20230306175528024.png" alt="image-20230306175528024" style="zoom:80%;" />
 
-# 十四、
+# 十四、通过动画掩盖关卡加载过程
+
+1. 修改`USTUMenuUserWidget`：通过播放动画，掩盖切换关卡的冻结情况
+
+   ```c++
+   UCLASS()
+   class SHOOTTHEMUP_API USTUMenuUserWidget : public USTUBaseWidget {
+       ...
+   
+   protected:
+       // 动画：隐藏整个UI界面, 用于关卡加载时防止冻结
+       UPROPERTY(meta = (BindWidgetAnim), Transient)
+       UWidgetAnimation* HideAnimation;
+   
+       virtual void OnAnimationFinished_Implementation(const UWidgetAnimation* Animation) override;
+   };
+   ```
+
+   ```c++
+   void USTUMenuUserWidget::OnStartGame() {
+       PlayAnimation(HideAnimation);
+   }
+   
+   void USTUMenuUserWidget::OnAnimationFinished_Implementation(const UWidgetAnimation* Animation) {
+       if (Animation != HideAnimation) return;
+   
+       const auto STUGameInstance = GetSTUGameInstance();
+       if (!STUGameInstance) return;
+   
+       UGameplayStatics::OpenLevel(this, STUGameInstance->GetStartupLevel().LevelName);
+   }
+
+2. 修改`WBP_Menu`：添加`HideAnimation`
+
+   <img src="AssetMarkdown/image-20230306181244632.png" alt="image-20230306181244632" style="zoom:80%;" />
+
+   <img src="AssetMarkdown/image-20230306181153809.png" alt="image-20230306181153809" style="zoom:80%;" />
+
