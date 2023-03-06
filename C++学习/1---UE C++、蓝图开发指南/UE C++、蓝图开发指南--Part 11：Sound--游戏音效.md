@@ -91,3 +91,47 @@
    1. 设置`OpenSound`为`SCue_WidgetOpen`
 
 7. 在小的UI控件上不设置`OpenSound`，防止声音过大
+
+# 三、动画音效：走路、奔跑、跳跃
+
+1. 创建音效`SCue_FootstepsWalk`
+
+   1. 路径：`Content/Sounds/Character`
+
+   <img src="AssetMarkdown/image-20230306211850357.png" alt="image-20230306211850357" style="zoom:80%;" />
+
+2. 修改动画`Run_Bwd、Run_Fwd、Run_Lt、Run_Rt`
+
+   1. 在角色脚步触及地面的那两帧，播放音效`SCue_FootstepsWalk`
+
+   <img src="AssetMarkdown/image-20230306212455149.png" alt="image-20230306212455149" style="zoom:80%;" />
+
+3. 创建音效`SCue_FootstepsRun`
+
+   1. 路径：`Content/Sounds/Character`
+
+   <img src="AssetMarkdown/image-20230306213002791.png" alt="image-20230306213002791" style="zoom:80%;" />
+
+4. 修改动画`RoadieRun_Fwd`
+
+   1. 在角色脚步触及地面的那两帧，播放音效`SCue_FootstepsRun`
+
+5. 创建音效`SCue_JumpStart`
+
+   1. 路径：`Content/Sounds/Character`
+
+   <img src="AssetMarkdown/image-20230306213155011.png" alt="image-20230306213155011" style="zoom:80%;" />
+
+6. 修改动画`JumpStart`
+
+   1. 在角色脚抬离地面的那一帧，播放音效`SCue_JumpStart`
+
+7. 创建音效`SCue_JumpEnd`
+
+   1. 路径：`Content/Sounds/Character`
+
+   <img src="AssetMarkdown/image-20230306213314934.png" alt="image-20230306213314934" style="zoom:80%;" />
+
+8. 修改动画`JumpEnd`
+
+   1. 在角色脚抬离地面的那一帧，播放音效`SCue_JumpEnd`
