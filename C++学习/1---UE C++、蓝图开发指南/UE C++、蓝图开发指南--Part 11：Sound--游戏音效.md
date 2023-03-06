@@ -163,3 +163,17 @@
    <img src="AssetMarkdown/image-20230306214801982.png" alt="image-20230306214801982" style="zoom:80%;" />
 
 5. 在对应动画处插入音效
+
+# 五、音效类：管理一组声音的设置
+
+1. 创建音效/类/音效类`SC_Character`
+
+   1. 路径：`Content/Sounds/Settings`
+
+2. 将所有与角色相关的音效的类设置为`SoundClassCharacter`
+
+   <img src="AssetMarkdown/image-20230306215917510.png" alt="image-20230306215917510" style="zoom:80%;" />
+
+3. 创建音效/类/音效类`SC_UI、SC_Weapon`，并设置对应的音效
+
+   1. 路径：`Content/Sounds/Settings`
