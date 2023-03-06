@@ -159,4 +159,137 @@
        PlayAnimMontage(EquipAnimMontage);
    }
 
-8. 
+# 二、击中不同部位，造成不同伤害
+
+1. 修改`STURifleWeapon/MakeDamage()`：传递击中的部位
+
+   ```c++
+   void ASTURifleWeapon::MakeDamage(const FHitResult& HitResult) {
+       const auto DamageActor = HitResult.GetActor();
+       if (!DamageActor) return;
+   
+       FPointDamageEvent PointDamageEvent;
+       PointDamageEvent.HitInfo = HitResult;
+       DamageActor->TakeDamage(DamageAmount, PointDamageEvent, GetController(), this);
+   }
+   ```
+
+2. 修改`STUHealthComponent`：订阅`OnTakePointDamage`
+
+   ```c++
+   class UPhysicalMaterial;
+   
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent {
+       ...
+   
+   private:
+       // 委托：角色受到点伤害
+       UFUNCTION()
+       void OnTakePointDamage(AActor* DamagedActor, float Damage, class AController* InstigatedBy, FVector HitLocation,
+           class UPrimitiveComponent* FHitComponent, FName BoneName, FVector ShotFromDirection, const class UDamageType* DamageType,
+           AActor* DamageCauser);
+   
+       // 委托：角色受到范围伤害
+       UFUNCTION()
+       void OnTakeRadialDamage(AActor* DamagedActor, float Damage, const class UDamageType* DamageType, FVector Origin, FHitResult HitInfo,
+           class AController* InstigatedBy, AActor* DamageCauser);
+   
+       // 造成伤害
+       void ApplyDamage(float Damage, AController* InstigatedBy);
+   
+       // 获取击中某个骨骼需要造成的伤害修正
+       float GetPointDamageModifier(AActor* DamagedActor, const FName& BoneName);
+   };
+   ```
+
+   ```c++
+   #include "GameFramework/Character.h"
+   #include "GameFramework/Controller.h"
+   #include "PhysicalMaterials/PhysicalMaterial.h"
+   
+   void USTUHealthComponent::BeginPlay() {
+       Super::BeginPlay();
+   
+       check(MaxHealth > 0);
+   
+       SetHealth(MaxHealth);
+   
+       // 订阅OnTakeAnyDamage事件
+       AActor* ComponentOwner = GetOwner();
+       if (ComponentOwner) {
+           ComponentOwner->OnTakeAnyDamage.AddDynamic(this, &USTUHealthComponent::OnTakeAnyDamageHandler);
+           ComponentOwner->OnTakePointDamage.AddDynamic(this, &USTUHealthComponent::OnTakePointDamage);
+           ComponentOwner->OnTakeRadialDamage.AddDynamic(this, &USTUHealthComponent::OnTakeRadialDamage);
+       }
+   }
+   
+   void USTUHealthComponent::OnTakeAnyDamageHandler(
+       AActor* DamagedActor, float Damage, const UDamageType* DamageType, AController* InstigatedBy, AActor* DamageCauser) {
+   
+       UE_LOG(LogSTUHealthComponent, Display, TEXT("On any damage: %f"), Damage);
+   
+   }
+   
+   void USTUHealthComponent::OnTakePointDamage(AActor* DamagedActor, float Damage, AController* InstigatedBy, FVector HitLocation,
+       UPrimitiveComponent* FHitComponent, FName BoneName, FVector ShotFromDirection, const UDamageType* DamageType, AActor* DamageCauser) {
+       
+       const auto FinalDamage = Damage * GetPointDamageModifier(DamagedActor, BoneName);
+       UE_LOG(LogSTUHealthComponent, Display, TEXT("On point damage: %f, final damage: %f, bone: %s"), Damage, FinalDamage, *BoneName.ToString());
+       ApplyDamage(FinalDamage, InstigatedBy);
+   
+   }
+   
+   void USTUHealthComponent::OnTakeRadialDamage(AActor* DamagedActor, float Damage, const UDamageType* DamageType, FVector Origin,
+       FHitResult HitInfo, AController* InstigatedBy, AActor* DamageCauser) {
+       
+       UE_LOG(LogSTUHealthComponent, Display, TEXT("On radial damage: %f"), Damage);
+       ApplyDamage(Damage, InstigatedBy);
+   
+   }
+   
+   void USTUHealthComponent::ApplyDamage(float Damage, AController* InstigatedBy) {
+       if (Damage <= 0.0f || IsDead() || !GetWorld()) return;
+   
+       SetHealth(Health - Damage);
+   
+       // 角色受伤时, 停止自动恢复
+       GetWorld()->GetTimerManager().ClearTimer(HealTimerHandle);
+   
+       // 角色死亡后, 广播OnDeath委托
+       if (IsDead()) {
+           Killed(InstigatedBy);
+           OnDeath.Broadcast();
+       }
+       // 角色未死亡且可以自动恢复
+       else if (AutoHeal) {
+           GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, this, &USTUHealthComponent::HealUpdate, HealUpdateTime, true, HealDelay);
+       }
+   
+       // 相机抖动
+       PlayCameraShake();
+   }
+   
+   float USTUHealthComponent::GetPointDamageModifier(AActor* DamagedActor, const FName& BoneName) {
+       const auto Character = Cast<ACharacter>(DamagedActor);
+       if (!Character) return 1.0f;
+   
+       const auto Mesh = Character->GetMesh();
+       if (!Mesh) return 1.0f;
+   
+       const auto BodyInstance = Mesh->GetBodyInstance(BoneName);
+       if (!BodyInstance) return 1.0f;
+   
+       const auto PhysMaterial = BodyInstance->GetSimplePhysicalMaterial();
+       if (!PhysMaterial || !DamageModifiers.Contains(PhysMaterial)) return 1.0f;
+   
+       return DamageModifiers[PhysMaterial];
+   }
+
+3. 修改角色的骨骼树：将手、腿的物理材料赋值给对应的碰撞体
+
+4. 修改`BP_STUAICharacter、BP_STUPlayerCharacter`：设置`DamageModifiers`
+
+   <img src="AssetMarkdown/image-20230307020301087.png" alt="image-20230307020301087" style="zoom:80%;" />
+
+5. 
