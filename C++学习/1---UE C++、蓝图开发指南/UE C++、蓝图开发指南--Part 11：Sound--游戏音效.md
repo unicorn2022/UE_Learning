@@ -135,3 +135,31 @@
 8. 修改动画`JumpEnd`
 
    1. 在角色脚抬离地面的那一帧，播放音效`SCue_JumpEnd`
+
+# 四、动画音效：切换武器、切换弹夹
+
+1. 创建音效`SCue_WeaponEquip`
+
+   1. 路径：`Content/Sounds/Weapon`
+
+   <img src="AssetMarkdown/image-20230306214621360.png" alt="image-20230306214621360" style="zoom:80%;" />
+
+2. 创建音效`SCue_RifleReload`
+
+   1. 路径：`Content/Sounds/Weapon/Rifle`
+
+   <img src="AssetMarkdown/image-20230306214708054.png" alt="image-20230306214708054" style="zoom:80%;" />
+
+3. 创建音效`SCue_LauncherReloadStart`
+
+   1. 路径：`Content/Sounds/Weapon/Launcher`
+
+   <img src="AssetMarkdown/image-20230306214740622.png" alt="image-20230306214740622" style="zoom:80%;" />
+
+4. 创建音效`SCue_LauncherReloadEnd`
+
+   1. 路径：`Content/Sounds/Weapon/Launcher`
+
+   <img src="AssetMarkdown/image-20230306214801982.png" alt="image-20230306214801982" style="zoom:80%;" />
+
+5. 在对应动画处插入音效
