@@ -292,4 +292,121 @@
 
    <img src="AssetMarkdown/image-20230307020301087.png" alt="image-20230307020301087" style="zoom:80%;" />
 
-5. 
+# 三、AI感知伤害
+
+1. 修改`BP_STUAIController/STUAIPerceptionComponent/AI感官配置`：
+
+   1. 添加`AI伤害感官配置`
+
+   <img src="AssetMarkdown/image-20230307020930564.png" alt="image-20230307020930564" style="zoom:80%;" />
+
+2. 修改`STUAIPerceptionComponent/GetClosetEnemy()`：
+
+   ```c++
+   #include "Perception/AISense_Damage.h"
+   
+   AActor* USTUAIPerceptionComponent::GetClosetEnemy() const {
+       // 获取AI视野内的所有Actor
+       TArray<AActor*> PerciveActors;
+       GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), PerciveActors);
+       
+       // AI视野内没有Actor
+       if (PerciveActors.Num() == 0) {
+           // 获取对AI造成伤害的Actor
+           GetCurrentlyPerceivedActors(UAISense_Damage::StaticClass(), PerciveActors);
+           if (PerciveActors.Num() == 0) return nullptr;
+       }
+   
+       // 获取当前角色的Pawn
+       const auto Controller = Cast<AAIController>(GetOwner());
+       if (!Controller) return nullptr;
+       const auto Pawn = Controller->GetPawn();
+       if (!Pawn) return nullptr;
+   
+       // 获取距离当前角色最近的Character
+       float ClosetDistance = MAX_FLT;
+       AActor* ClosetActor = nullptr;
+       for (const auto PerciveActor : PerciveActors) {
+           // 判断character是否已死亡
+           const auto HealthComponent = STUUtils::GetSTUPlayerComponent<USTUHealthComponent>(PerciveActor);
+           if (!HealthComponent || HealthComponent->IsDead()) continue;
+   
+           // 判断两个character是否为敌人
+           const auto PercivePawn = Cast<APawn>(PerciveActor);
+           const auto AreEnemies = PercivePawn && STUUtils::AreEnemies(Controller, PercivePawn->Controller);
+           if (!AreEnemies) continue;
+           
+           // 更新距离信息
+           const auto CurrentDistance = (PerciveActor->GetActorLocation() - Pawn->GetActorLocation()).Size();
+           if (CurrentDistance < ClosetDistance) {
+               ClosetDistance = CurrentDistance;
+               ClosetActor = PerciveActor;
+           }
+       }
+   
+       return ClosetActor;
+   }
+
+3. 修改`STUHealthComponent`：将受到的伤害传递给感官系统
+
+   ```c++
+   UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+   class SHOOTTHEMUP_API USTUHealthComponent : public UActorComponent {
+       ...
+           
+   private:
+       // 将受到的伤害传递给感官系统
+       void ReportDamageEvent(float Damage, AController* InstigatedBy);
+   };
+   ```
+
+   ```c++
+   #include "Perception/AISense_Damage.h"
+   
+   void USTUHealthComponent::ApplyDamage(float Damage, AController* InstigatedBy) {
+       if (Damage <= 0.0f || IsDead() || !GetWorld()) return;
+   
+       SetHealth(Health - Damage);
+   
+       // 角色受伤时, 停止自动恢复
+       GetWorld()->GetTimerManager().ClearTimer(HealTimerHandle);
+   
+       // 角色死亡后, 广播OnDeath委托
+       if (IsDead()) {
+           Killed(InstigatedBy);
+           OnDeath.Broadcast();
+       }
+       // 角色未死亡且可以自动恢复
+       else if (AutoHeal) {
+           GetWorld()->GetTimerManager().SetTimer(HealTimerHandle, this, &USTUHealthComponent::HealUpdate, HealUpdateTime, true, HealDelay);
+       }
+   
+       // 相机抖动
+       PlayCameraShake();
+       // 将受到的伤害传递给感官系统
+       ReportDamageEvent(Damage, InstigatedBy);
+   }
+   
+   void USTUHealthComponent::ReportDamageEvent(float Damage, AController* InstigatedBy) {
+       if (!InstigatedBy || !InstigatedBy->GetPawn() || !GetOwner()) return;
+   
+       UAISense_Damage::ReportDamageEvent(GetWorld(),    //
+           GetOwner(),                                   //
+           InstigatedBy->GetPawn(),                      //
+           Damage,                                       //
+           InstigatedBy->GetPawn()->GetActorLocation(),  //
+           GetOwner()->GetActorLocation());
+   }
+
+# 四、新的地图、图标
+
+1. 创建新地图
+   1. 使用BSP画刷建立地形，完成后将其转化为静态网格体
+      1. 设置碰撞
+      2. 将`光照贴图坐标索引`设置为1
+      3. 将`覆盖的光照贴图分辨率`提高，可以优化阴影
+   2. 添加Lightmass重要体积，并让它覆盖整个场景
+   3. 设置游戏模式重载
+2. 优化原有地图
+3. 修改`项目设置/Windows/Splash`，可以修改项目启动时的画面
+4. 修改`项目设置/Windows/Icon`，可以修改项目图标
