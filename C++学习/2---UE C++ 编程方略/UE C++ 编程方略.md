@@ -568,4 +568,14 @@ void AExportOBJActor::ExportToOBJFile(FString mtlName, std::vector<FVector3f>& o
 }
 ```
 
-# 七、生成静态模型
+# 七&八、导入OBJ文件
+
+修改`Learning.Build.cs`：
+
+```c++
+PublicDependencyModuleNames.AddRange(new string[] {
+    "Core", "CoreUObject", "Engine", "InputCore",
+    "MeshDescription", "StaticMeshDescription", "MeshConversion"
+});
+```
+
