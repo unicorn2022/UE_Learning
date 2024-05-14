@@ -102,3 +102,76 @@ class FOpenGLDynamicRHI : public FDynamicRHI;
 ```
 
 # 二、Shader
+
+## 2.1	Shader相关类
+
+### 2.1.1	RHI层次的基类：`FRHIShader`
+
+```c++
+/* 源代码: Engine/Source/Runtime/RHI/Public/RHIREsources.h */
+class FRHIShader : public FRHIResource{
+private:
+	FSHAHash Hash;				// 哈希值
+	EShaderFrequency Frequency;	// 定义是哪种类型的Shader，如Vertex、Compute、Pixel、RayGen…
+};
+```
+
+### 2.1.2	RHI层次的不同Shader对应的类
+
+```c++
+/** 这里的继承只是用于初始化 RHIShader 里面的两个成员变量 **/
+
+/* 实时渲染 */
+// 先使用 GraphicsShader 继承一次
+class FRHIGraphicsShader : public FRHIShader;
+// 然后常用的 Shader 类型继承自 GraphicsShader
+class FRHIVertexShader : public FRHIGraphicsShader;
+class FRHIMeshShader : public FRHIGraphicsShader;
+class FRHIPixelShader : public FRHIGraphicsShader;
+class FRHIGeometryShader : public FRHIGraphicsShader;
+
+/* 光追 */
+// 先使用 RayTracingShader 继承一次
+class FRHIRayTracingShader : public FRHIShader;
+// 然后继承 RayTracingShader
+class FRHIRayGenShader : public FRHIRayTracingShader;
+class FRHIRayMissShader : public FRHIRayTracingShader;
+class FRHIRayCallableShader : public FRHIRayTracingShader;
+class FRHIRayHitGroupShader : public FRHIRayTracingShader;
+```
+
+### 2.1.3	不同硬件对应的实现
+
+```c++
+/* 源代码: Engine/Source/Runtime/D3D12RHI/Private/D3D12Shader.h */
+struct FD3D12ShaderData {
+	TArray<uint8> Code; // 着色器代码
+    ...
+}
+class FD3D12VertexShader : public FRHIVertexShader, public FD3D12ShaderData;
+```
+
+## 2.2	创建Shader
+
+### 2.2.1	RHI层面调用
+
+```c++
+/* 源代码: Engine/Source/Runtime/RHI/Public/RHICommandList.h */
+FVertexShaderRHIRef RHICreateVertexShader(TArrayView<const uint8> Code, const FSHAHash& Hash);
+```
+
+### 2.2.2	不同硬件对应的实现
+
+```c++
+/* 源代码: Engine\Source\Runtime\OpenGLDrv\Private\OpenGLShaders.cpp */
+FVertexShaderRHIRef FOpenGLDynamicRHI::RHICreateVertexShader(TArrayView<const uint8> Code, const FSHAHash& Hash);
+```
+
+- 在UE中，`TArrayView`并不是只存数据本身，还有一定的参数
+- 因此需要用一个Reader解析数据，如`FShaderReader`
+  - Array中不仅存储了代码`Code`，还存储了数据`OptionalData`，先代码后数据
+  - Array的最后一个对象表示存储的数据大小
+    - 可以通过`FShaderReader.GetOptionalDataSize()`获取到
+  - 通过`Key`获取数据本身：
+    - 可以通过`FShaderReader.FindOptionalData(InKey)`获取到
+- 获取到代码后，会先通过根据平台转化GLSL代码，然后调用OpenGL的函数编译代码
