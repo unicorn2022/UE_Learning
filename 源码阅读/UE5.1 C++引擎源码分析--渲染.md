@@ -145,11 +145,21 @@ class FRHIRayHitGroupShader : public FRHIRayTracingShader;
 ```c++
 /* 源代码: Engine/Source/Runtime/D3D12RHI/Private/D3D12Shader.h */
 struct FD3D12ShaderData {
-	TArray<uint8> Code; // 着色器代码
+    // 着色器代码
+	TArray<uint8> Code; 
     ...
+    // 当前着色器用到的资源数量
+    // 即sampler, SRV, CB, UAV各自的数量
+    // 可以通过FShaderCodeReader读取Code, 从而得到这些信息
+    FShaderCodePackedResourceCounts ResourceCounts{}; 
+    
 }
 class FD3D12VertexShader : public FRHIVertexShader, public FD3D12ShaderData;
 ```
+
+- `SRV`：shader resource view
+- `CB`：constant buffer
+- `UAV`：unordered access view
 
 ## 2.2	创建Shader
 
@@ -318,3 +328,32 @@ IMPLEMENT_GLOBAL_SHADER(FDeferredLightVS, "/Engine/Private/DeferredLightVertexSh
 
 # 三、Shader的编译、创建流程
 
+`GGlobalShaderMap`：
+
+- 管理所有Shader的信息
+
+  ```c++
+  /* 源代码: Engine\Source\Runtime\RenderCore\Private\GlobalShader.cpp */
+  FGlobalShaderMap* GGlobalShaderMap[SP_NumPlatforms] = {};
+  ```
+
+在引擎初始化时：
+
+- 调用`CompileGlobalShaderMap`创建全局Shader信息
+
+  ```c++
+  /* 源代码: Engine\Source\Runtime\Engine\Public\ShaderCompiler.h */
+  extern ENGINE_API void CompileGlobalShaderMap(bool bRefreshShaderMap=false);
+  ```
+
+- 在创建Shader时，会通过FShaderCodeReader解析编译后的Shader代码，获取需要的统计信息
+
+  - 在D3D12编译Shader代码时，编译出的结果不仅包含可执行程序，还包含了对Shader的描述信息
+  - UE通过D3D12提供的接口，记录Shader的信息
+
+- 在创建PipelineState时，UE会通过`FD3D12BoundShaderState`获取所有Shader的`ShaderData`，从而创建`FD3D12QuantizedBoundShaderState`
+
+  - `FD3D12QuantizedBoundShaderState`：是一个渲染管线的所有Shader绑定起来的信息
+  - 然后根据这个QBSS创建根签名
+
+# 四、渲染命令的封装
