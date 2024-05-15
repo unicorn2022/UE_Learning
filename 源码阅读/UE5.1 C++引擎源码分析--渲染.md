@@ -175,3 +175,146 @@ FVertexShaderRHIRef FOpenGLDynamicRHI::RHICreateVertexShader(TArrayView<const ui
   - 通过`Key`获取数据本身：
     - 可以通过`FShaderReader.FindOptionalData(InKey)`获取到
 - 获取到代码后，会先通过根据平台转化GLSL代码，然后调用OpenGL的函数编译代码
+
+```c++
+/* 源代码: Engine/Source/Runtime/D3D12RHI/Private/D3D12Shader.cpp */
+FVertexShaderRHIRef FD3D12DynamicRHI::RHICreateVertexShader(TArrayView<const uint8> Code, const FSHAHash& Hash) {
+	return CreateStandardShader<FD3D12VertexShader>(Code);
+}
+
+template <typename TShaderType>
+TShaderType* CreateStandardShader(TArrayView<const uint8> InCode) {
+    // 解析 Code
+	FShaderCodeReader ShaderCode(InCode);
+	TShaderType* Shader = new TShaderType();
+
+	FMemoryReaderView Ar(InCode, true);
+	Ar << Shader->ShaderResourceTable;
+
+	const int32 Offset = Ar.Tell();
+
+   	// 初始化 Shader
+	if (!InitShaderCommon(ShaderCode, Offset, Shader)) {
+		delete Shader;
+		return nullptr;
+	}
+
+	UE::RHICore::InitStaticUniformBufferSlots(Shader->StaticSlots, Shader->ShaderResourceTable);
+	return Shader;
+}
+```
+
+## 2.3	上层使用Shader：`FShader`
+
+### 2.3.1	`FShader`中的宏代码讲解
+
+```c++
+/* 源代码: Engine\Source\Runtime\RenderCore\Public\Shader.h */
+class RENDERCORE_API FShader {
+    friend class FShaderType;
+    // 由于未继承UObject, 因此需要实现新的反射机制
+	DECLARE_TYPE_LAYOUT(FShader, NonVirtual);
+public:
+    ...
+    // 编译环境发生改变时的操作
+    static void ModifyCompilationEnvironment(const FShaderPermutationParameters&, FShaderCompilerEnvironment&) {}
+
+	// 是否需要编译Permutation
+	static bool ShouldCompilePermutation(const FShaderPermutationParameters&) { return true; }
+    ...
+protected:
+    ...
+    // 定义反射变量
+    LAYOUT_FIELD_EDITORONLY(FSHAHash, OutputHash);
+private:
+    ...
+   	// 定义反射变量
+    LAYOUT_FIELD(FShaderTarget, Target);
+};
+```
+
+#### 2.3.1.1	`Permutation`
+
+- 在UE的shader中`*.usf`，同一份代码可能会有不同的编译选项，从而产生出编译选项的排列组合
+- 与`Permutation`相关的类就是在处理这个排列组合
+
+#### 2.3.1.2	`FShader`的反射机制实现思路：
+
+- 在`DECLARE_TYPE_LAYOUT()`处定义`Initialize()`的默认函数
+
+  ```c++
+  template<int Counter>
+  struct InternalLinkType{
+      static void Initialize(FTypeLayoutDesc& TypeDesc){}
+  }
+  ```
+
+- 在`LAYOUT_FIELD()`处定义`Initialize()`的偏特化，构成链式初始化结构，然后收集当前变量的信息
+
+  - 宏展开后，`InternalLinkType<>`处的模板参数会自动`+1`
+  - `+1`是通过`__COUNTER__`这个编译器预定义宏实现的
+
+  ```c++
+  FShaderParameterBindings Bindings;
+  template<>
+  struct InternalLinkType<601 - CounterBase> {
+      static void Initialize(FTypeLayoutDesc& TypeDesc) {
+          // 调用下一个InternalLinkType的初始化函数
+          InternalLinkType<601 - CounterBase + 1>::Initialize(TypeDesc);
+         	
+          // 收集当前成员变量的信息
+          alignas(FFieldLayoutDesc)
+          static uint8 FieldBuffer[sizeof(FFieldLayoutDesc)] = {0};
+          FFieldLayoutDesc& FieldDesc = *(FFieldLayoutDesc*)FieldBuffer;
+          
+          FieldDesc.Name = L"Bindings";
+          ...
+          FieldDesc.Offset = ((::size_t) & reinterpret_cast<char const volatile&>(((DerivedType*)0)->Bindings));
+          ...
+             
+      }
+  }
+  ```
+
+- 在`IMPLEMENT_GLOBAL_SHADER()`中调用`InternalLinkType<1>::Initialize(TypeDesc)`，从而链式初始化所有成员变量对应的`InternalLinkType<>`
+
+### 2.3.2	使用示例：自己编写Shader，在UE中使用
+
+通常是自己写一个类，继承`FGlobalShader`
+
+- `FGlobalShader`继承自`FShader`
+
+
+```c++
+/* 源代码: Engine\Source\Runtime\Renderer\Private\LightRendering.h */
+class FDeferredLightVS : public FGlobalShader {
+    // 两个固定的宏
+	DECLARE_SHADER_TYPE(FDeferredLightVS,Global);
+	SHADER_USE_PARAMETER_STRUCT(FDeferredLightVS, FGlobalShader);
+
+	class FRadialLight : SHADER_PERMUTATION_BOOL("SHADER_RADIAL_LIGHT");
+	using FPermutationDomain = TShaderPermutationDomain<FRadialLight>;
+	
+    // 定义Shader的参数格式
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
+		SHADER_PARAMETER_STRUCT_INCLUDE(FDrawFullScreenRectangleParameters, FullScreenRect)
+		SHADER_PARAMETER_STRUCT_INCLUDE(FStencilingGeometryShaderParameters::FParameters, Geometry)
+	END_SHADER_PARAMETER_STRUCT()
+	
+public:
+    ...
+};
+```
+
+然后在`.cpp`中通过`IMPLEMENT_GLOBAL_SHADER()`注册对应的着色器文件、入口函数、着色器类型
+
+- 在这里调用了`InternalLinkType<1>::Initialize(TypeDesc)`
+
+```c++
+/* 源代码: Engine\Source\Runtime\Renderer\Private\LightRendering.cpp */
+IMPLEMENT_GLOBAL_SHADER(FDeferredLightVS, "/Engine/Private/DeferredLightVertexShaders.usf", "VertexMain", SF_Vertex);
+```
+
+# 三、Shader的编译、创建流程
+
